@@ -4108,7 +4108,7 @@ function buildAnimationCSS(opts) {
   @keyframes a-fade { from { opacity: 0 } to { opacity: 1 } }
   @keyframes a-fade-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
   @keyframes a-scale { from { opacity: 0; transform: scale(0.85) } to { opacity: 1; transform: scale(1) } }
-  @keyframes a-draw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
+  @keyframes a-draw { from { stroke-dashoffset: 1; opacity: 1 } to { stroke-dashoffset: 0; opacity: 1 } }
 
   /* Animated nodes \u2014 expo-out: fast appear, gentle settle */
   .an { opacity: 0; animation: ${nodeKeyframe} ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; transform-box: fill-box; transform-origin: center; }
@@ -4116,8 +4116,8 @@ function buildAnimationCSS(opts) {
   /* Animated groups \u2014 same easing as nodes */
   .ag { opacity: 0; animation: a-fade ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; }
 
-  /* Animated edges \u2014 smooth flow: accelerate from source, decelerate into target */
-  .ae { stroke-dasharray: 1; stroke-dashoffset: 1; animation: a-draw ${opts.duration}ms ${opts.edgeEasing} var(--d) forwards; }
+  /* Animated edges \u2014 hidden during delay via opacity:0, revealed when animation starts */
+  .ae { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: a-draw ${opts.duration}ms ${opts.edgeEasing} var(--d) forwards; }
 
   /* Animated edge labels \u2014 fade with node easing */
   .ael { opacity: 0; animation: a-fade ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; }
