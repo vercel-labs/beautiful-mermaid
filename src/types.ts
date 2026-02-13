@@ -85,6 +85,8 @@ export interface PositionedNode {
   height: number
   /** Inline styles resolved from classDef + explicit `style` statements — override theme defaults */
   inlineStyle?: Record<string, string>
+  /** Dagre rank (0 = first layer). Used for animation sequencing. */
+  rank?: number
 }
 
 export interface PositionedEdge {
@@ -98,6 +100,10 @@ export interface PositionedEdge {
   points: Point[]
   /** Layout-computed label center position (avoids label-label collisions) */
   labelPosition?: Point
+  /** Source node rank. Used for animation sequencing. */
+  sourceRank?: number
+  /** Target node rank. Used for animation sequencing. */
+  targetRank?: number
 }
 
 export interface Point {
@@ -113,6 +119,8 @@ export interface PositionedGroup {
   width: number
   height: number
   children: PositionedGroup[]
+  /** Min rank of contained nodes. Used for animation sequencing. */
+  rank?: number
 }
 
 // ============================================================================
@@ -153,4 +161,72 @@ export interface RenderOptions {
   layerSpacing?: number
   /** Render with transparent background (no background style on SVG). Default: false */
   transparent?: boolean
+
+  // -- Typography overrides (override hardcoded FONT_SIZES) --
+
+  /** Node label font size in px. Default: 13 */
+  fontSize?: number
+  /** Edge label font size in px. Default: 11 */
+  edgeFontSize?: number
+  /** Node label font weight. Default: 500 */
+  fontWeight?: number
+  /** Letter spacing in px (e.g. -0.384). Default: 0 */
+  letterSpacing?: number
+
+  // -- Node padding overrides (override hardcoded NODE_PADDING) --
+
+  /** Horizontal padding inside node shapes in px. Default: 16 */
+  nodePaddingX?: number
+  /** Vertical padding inside node shapes in px. Default: 10 */
+  nodePaddingY?: number
+  /** Corner radius for rectangular node shapes in px. Default: 0 */
+  cornerRadius?: number
+  /** Stroke width for edge/connector lines in px. Default: 0.75 */
+  lineWidth?: number
+  /** Radius for rounded corners on edge bends in px. 0 = sharp corners. Default: 0 */
+  edgeBendRadius?: number
+  /** Subgraph header font size in px. Default: 12 */
+  groupFontSize?: number
+  /** Subgraph header font weight. Default: 600 */
+  groupFontWeight?: number
+  /** Subgraph header font family override (e.g. 'Geist Mono'). Falls back to main font. */
+  groupFont?: string
+  /** Subgraph header text transform (e.g. 'uppercase'). Default: none */
+  groupTextTransform?: string
+  /** Subgraph corner radius in px. Default: 0 */
+  groupCornerRadius?: number
+  /** Subgraph border color. Default: var(--_node-stroke) */
+  groupBorderColor?: string
+  /** Subgraph vertical (block) padding in px. Default: 12 */
+  groupPaddingY?: number
+  /** Subgraph horizontal (inline) padding in px. Default: 16 */
+  groupPaddingX?: number
+
+  /** Animation configuration. Pass `true` for defaults or an object to customize. */
+  animate?: boolean | AnimationOptions
+}
+
+// ============================================================================
+// Animation options
+// ============================================================================
+
+export interface AnimationOptions {
+  /** Duration of each element's animation in ms. Default: 600 */
+  duration?: number
+  /** Delay between consecutive elements in ms. Within-rank stagger is derived as stagger * 0.5. Default: 80 */
+  stagger?: number
+  /** Extra offset for when group container appears in ms. Default: -60 */
+  groupDelay?: number
+  /** How early a node starts appearing before its incoming edge finishes, as a fraction of duration (0 = wait for edge, 0.5 = start halfway through edge, 1 = start with edge). Default: 0.3 */
+  nodeOverlap?: number
+  /** Easing for node/group enter animations. Default: 'cubic-bezier(0.16, 1, 0.3, 1)' (expo-out — fast appear, gentle settle) */
+  nodeEasing?: string
+  /** Easing for edge draw-in + arrow travel. Must be a cubic-bezier for arrow sync. Default: 'cubic-bezier(0.65, 0, 0.35, 1)' (smooth flow) */
+  edgeEasing?: string
+  /** Node entrance animation. Default: 'fade' */
+  nodeAnimation?: 'fade' | 'fade-up' | 'scale' | 'none'
+  /** Edge entrance animation. Default: 'draw' */
+  edgeAnimation?: 'draw' | 'fade' | 'none'
+  /** Respect prefers-reduced-motion. Default: true */
+  reducedMotion?: boolean
 }

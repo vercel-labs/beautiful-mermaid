@@ -47,10 +47,10 @@ export interface DiagramColors {
 // Defaults
 // ============================================================================
 
-/** Default bg/fg when no colors are provided (zinc light) */
+/** Default colors when none provided (Vercel dark) */
 export const DEFAULTS: Readonly<{ bg: string; fg: string }> = {
-  bg: '#FFFFFF',
-  fg: '#27272A',
+  bg: '#0A0A0A',
+  fg: '#EDEDED',
 } as const
 
 // ============================================================================
@@ -148,6 +148,16 @@ export const THEMES: Record<string, DiagramColors> = {
   'one-dark': {
     bg: '#282c34', fg: '#abb2bf',
     line: '#4b5263', accent: '#c678dd', muted: '#5c6370',
+  },
+  'vercel-dark': {
+    bg: '#0A0A0A', fg: '#EDEDED',
+    line: '#EDEDED', accent: '#EDEDED', muted: '#888888',
+    surface: '#0A0A0A', border: '#454545',
+  },
+  'vercel-light': {
+    bg: '#FFFFFF', fg: '#171717',
+    line: '#EAEAEA', accent: '#000000', muted: '#888888',
+    surface: '#FAFAFA', border: '#EAEAEA',
   },
 } as const
 

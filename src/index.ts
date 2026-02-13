@@ -20,7 +20,7 @@
 //   const svg = await renderMermaid('graph TD\n  A --> B', { bg: '#1a1b26', fg: '#a9b1d6' })
 // ============================================================================
 
-export type { RenderOptions, MermaidGraph, PositionedGraph } from './types.ts'
+export type { RenderOptions, MermaidGraph, PositionedGraph, AnimationOptions } from './types.ts'
 export type { DiagramColors, ThemeName } from './theme.ts'
 export { fromShikiTheme, THEMES, DEFAULTS } from './theme.ts'
 export { parseMermaid } from './parser.ts'
@@ -33,6 +33,7 @@ import { renderSvg } from './renderer.ts'
 import type { RenderOptions } from './types.ts'
 import type { DiagramColors } from './theme.ts'
 import { DEFAULTS } from './theme.ts'
+import { resolveAnimation } from './animation.ts'
 
 // New diagram type imports
 import { parseSequenceDiagram } from './sequence/parser.ts'
@@ -114,7 +115,7 @@ export async function renderMermaid(
   options: RenderOptions = {}
 ): Promise<string> {
   const colors = buildColors(options)
-  const font = options.font ?? 'Inter'
+  const font = options.font ?? 'Geist'
   const transparent = options.transparent ?? false
   const diagramType = detectDiagramType(text)
 
@@ -142,7 +143,8 @@ export async function renderMermaid(
       // Flowchart + state diagram pipeline (original)
       const graph = parseMermaid(text)
       const positioned = await layoutGraph(graph, options)
-      return renderSvg(positioned, colors, font, transparent)
+      const anim = resolveAnimation(options.animate)
+      return renderSvg(positioned, colors, font, transparent, options, anim)
     }
   }
 }

@@ -150,6 +150,58 @@ function removeCollinear(pts: Point[]): Point[] {
 }
 
 /**
+ * Center the horizontal (or vertical) crossover segment of Z-bend edges.
+ *
+ * After orthogonal snapping, edges that change both X and Y form a Z-pattern:
+ *   vertical → horizontal → vertical  (in TD/BT layouts)
+ *
+ * Dagre places the crossover close to the source. This function shifts it
+ * to the midpoint between the first and last Y (or X) for visual balance.
+ *
+ * Only adjusts segments where the pattern is unambiguous — leaves complex
+ * multi-bend edges untouched.
+ */
+export function centerZBends(points: Point[], verticalFirst = true): Point[] {
+  if (points.length !== 4) return points
+
+  if (verticalFirst) {
+    // Expected Z-pattern: p0→p1 vertical, p1→p2 horizontal, p2→p3 vertical
+    const [p0, p1, p2, p3] = points as [Point, Point, Point, Point]
+    const isVertical1 = Math.abs(p0.x - p1.x) < 1 && Math.abs(p0.y - p1.y) >= 1
+    const isHorizontal = Math.abs(p1.y - p2.y) < 1 && Math.abs(p1.x - p2.x) >= 1
+    const isVertical2 = Math.abs(p2.x - p3.x) < 1 && Math.abs(p2.y - p3.y) >= 1
+
+    if (isVertical1 && isHorizontal && isVertical2) {
+      const midY = (p0.y + p3.y) / 2
+      return [
+        { ...p0 },
+        { x: p1.x, y: midY },
+        { x: p2.x, y: midY },
+        { ...p3 },
+      ]
+    }
+  } else {
+    // LR/RL: p0→p1 horizontal, p1→p2 vertical, p2→p3 horizontal
+    const [p0, p1, p2, p3] = points as [Point, Point, Point, Point]
+    const isHorizontal1 = Math.abs(p0.y - p1.y) < 1 && Math.abs(p0.x - p1.x) >= 1
+    const isVertical = Math.abs(p1.x - p2.x) < 1 && Math.abs(p1.y - p2.y) >= 1
+    const isHorizontal2 = Math.abs(p2.y - p3.y) < 1 && Math.abs(p2.x - p3.x) >= 1
+
+    if (isHorizontal1 && isVertical && isHorizontal2) {
+      const midX = (p0.x + p3.x) / 2
+      return [
+        { ...p0 },
+        { x: midX, y: p1.y },
+        { x: midX, y: p2.y },
+        { ...p3 },
+      ]
+    }
+  }
+
+  return points
+}
+
+/**
  * Node rectangle for endpoint clipping — uses dagre's center-based coordinates.
  */
 export interface NodeRect {

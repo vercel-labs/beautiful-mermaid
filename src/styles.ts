@@ -33,16 +33,16 @@ export const MONO_FONT_STACK = `${MONO_FONT}, 'SF Mono', 'Fira Code', ui-monospa
 /** Fixed font sizes used in the renderer (in px) */
 export const FONT_SIZES = {
   /** Node label text */
-  nodeLabel: 13,
+  nodeLabel: 19.2,
   /** Edge label text */
-  edgeLabel: 11,
+  edgeLabel: 10,
   /** Subgraph header text */
-  groupHeader: 12,
+  groupHeader: 16,
 } as const
 
 /** Font weights used per element type */
 export const FONT_WEIGHTS = {
-  nodeLabel: 500,
+  nodeLabel: 400,
   edgeLabel: 400,
   groupHeader: 600,
 } as const
@@ -58,9 +58,9 @@ export const GROUP_HEADER_CONTENT_PAD = 8
 /** Padding inside node shapes */
 export const NODE_PADDING = {
   /** Horizontal padding inside rectangles/rounded/stadium */
-  horizontal: 16,
+  horizontal: 24,
   /** Vertical padding inside rectangles/rounded/stadium */
-  vertical: 10,
+  vertical: 24,
   /** Extra padding for diamond shapes (they need more space due to rotation) */
   diamondExtra: 24,
 } as const
@@ -69,7 +69,7 @@ export const NODE_PADDING = {
 export const STROKE_WIDTHS = {
   outerBox: 1,
   innerBox: 0.75,
-  connector: 0.75,
+  connector: 1.5,
 } as const
 
 /**
@@ -87,7 +87,7 @@ export const TEXT_BASELINE_SHIFT = '0.35em' as const
 
 /** Arrow head dimensions */
 export const ARROW_HEAD = {
-  width: 8,
-  height: 4.8,
+  width: 7,
+  height: 7,
 } as const
 

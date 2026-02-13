@@ -3,7 +3,7 @@
 import dagre from '@dagrejs/dagre/dist/dagre.js'
 import type { MermaidGraph, MermaidSubgraph, PositionedGraph, PositionedNode, PositionedEdge, PositionedGroup, Point, RenderOptions } from './types.ts'
 import { estimateTextWidth, FONT_SIZES, FONT_WEIGHTS, NODE_PADDING, GROUP_HEADER_CONTENT_PAD } from './styles.ts'
-import { centerToTopLeft, snapToOrthogonal, clipToDiamondBoundary, clipToCircleBoundary, clipEndpointsToNodes } from './dagre-adapter.ts'
+import { centerToTopLeft, snapToOrthogonal, clipToDiamondBoundary, clipToCircleBoundary, clipEndpointsToNodes, centerZBends } from './dagre-adapter.ts'
 
 /** Shapes that render as circles — need edge endpoint clipping to the circle boundary */
 const CIRCULAR_SHAPES = new Set(['circle', 'doublecircle', 'state-start', 'state-end'])
@@ -30,11 +30,18 @@ const NON_RECT_SHAPES = new Set(['diamond', 'circle', 'doublecircle', 'state-sta
 // ============================================================================
 
 /** Default render options (layout-only — color defaults are in theme.ts) */
-const DEFAULTS: Required<Pick<RenderOptions, 'font' | 'padding' | 'nodeSpacing' | 'layerSpacing'>> = {
-  font: 'Inter',
-  padding: 40,
-  nodeSpacing: 24,
-  layerSpacing: 40,
+const DEFAULTS: Required<Pick<RenderOptions, 'font' | 'padding' | 'nodeSpacing' | 'layerSpacing' | 'fontSize' | 'edgeFontSize' | 'fontWeight' | 'nodePaddingX' | 'nodePaddingY' | 'groupPaddingX' | 'groupPaddingY'>> = {
+  font: 'Geist',
+  padding: 80,
+  nodeSpacing: 40,
+  layerSpacing: 50,
+  fontSize: FONT_SIZES.nodeLabel,
+  edgeFontSize: FONT_SIZES.edgeLabel,
+  fontWeight: FONT_WEIGHTS.nodeLabel,
+  nodePaddingX: NODE_PADDING.horizontal,
+  nodePaddingY: NODE_PADDING.vertical,
+  groupPaddingX: 32,
+  groupPaddingY: 32,
 }
 
 // ============================================================================
@@ -84,8 +91,8 @@ function preComputeSubgraphLayout(
     nodesep: opts.nodeSpacing,
     ranksep: opts.layerSpacing,
     // Tighter margins for subgraph internals — the parent group provides outer padding
-    marginx: 16,
-    marginy: 12,
+    marginx: opts.groupPaddingX,
+    marginy: opts.groupPaddingY,
   })
   subG.setDefaultEdgeLabel(() => ({}))
 
@@ -98,14 +105,14 @@ function preComputeSubgraphLayout(
   for (const nodeId of sg.nodeIds) {
     const node = graph.nodes.get(nodeId)
     if (node) {
-      const size = estimateNodeSize(nodeId, node.label, node.shape)
+      const size = estimateNodeSize(nodeId, node.label, node.shape, opts.fontSize, opts.fontWeight, opts.nodePaddingX, opts.nodePaddingY)
       subG.setNode(nodeId, { label: node.label, width: size.width, height: size.height })
     }
   }
 
   // Add nested subgraphs as compound nodes (they keep the parent's direction)
   for (const child of sg.children) {
-    addSubgraphToDagre(subG, child, graph)
+    addSubgraphToDagre(subG, child, graph, opts, sg.id)
   }
 
   // Identify and add internal edges (both endpoints inside this subgraph)
@@ -117,8 +124,8 @@ function preComputeSubgraphLayout(
       const edgeLabel: Record<string, unknown> = { _index: i }
       if (edge.label) {
         edgeLabel.label = edge.label
-        edgeLabel.width = estimateTextWidth(edge.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8
-        edgeLabel.height = FONT_SIZES.edgeLabel + 6
+        edgeLabel.width = estimateTextWidth(edge.label, opts.edgeFontSize, FONT_WEIGHTS.edgeLabel) + 8
+        edgeLabel.height = opts.edgeFontSize + 6
         edgeLabel.labelpos = 'c'
       }
       subG.setEdge(edge.source, edge.target, edgeLabel)
@@ -292,7 +299,7 @@ export async function layoutGraph(
   // Add top-level nodes (those not in any subgraph)
   for (const [id, node] of graph.nodes) {
     if (!subgraphNodeIds.has(id)) {
-      const size = estimateNodeSize(id, node.label, node.shape)
+      const size = estimateNodeSize(id, node.label, node.shape, opts.fontSize, opts.fontWeight, opts.nodePaddingX, opts.nodePaddingY)
       g.setNode(id, { label: node.label, width: size.width, height: size.height })
     }
   }
@@ -304,7 +311,7 @@ export async function layoutGraph(
       const pc = preComputed.get(sg.id)!
       g.setNode(sg.id, { width: pc.width, height: pc.height })
     } else {
-      addSubgraphToDagre(g, sg, graph)
+      addSubgraphToDagre(g, sg, graph, opts)
     }
   }
 
@@ -355,8 +362,8 @@ export async function layoutGraph(
     const edgeLabel: Record<string, unknown> = { _index: i }
     if (edge.label) {
       edgeLabel.label = edge.label
-      edgeLabel.width = estimateTextWidth(edge.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8
-      edgeLabel.height = FONT_SIZES.edgeLabel + 6
+      edgeLabel.width = estimateTextWidth(edge.label, opts.edgeFontSize, FONT_WEIGHTS.edgeLabel) + 8
+      edgeLabel.height = opts.edgeFontSize + 6
       edgeLabel.labelpos = 'c'
     }
 
@@ -382,7 +389,7 @@ export async function layoutGraph(
   // -------------------------------------------------------------------------
   // Phase 4: Extract positions and compose pre-computed layouts.
   // -------------------------------------------------------------------------
-  return extractPositionedGraph(g, graph, opts.padding, preComputed)
+  return extractPositionedGraph(g, graph, opts.padding, preComputed, opts.groupPaddingX, opts.groupPaddingY)
 }
 
 // ============================================================================
@@ -402,11 +409,19 @@ function directionToDagre(dir: MermaidGraph['direction']): string {
 }
 
 /** Estimate node size based on label text + shape padding */
-function estimateNodeSize(id: string, label: string, shape: string): { width: number; height: number } {
-  const textWidth = estimateTextWidth(label, FONT_SIZES.nodeLabel, FONT_WEIGHTS.nodeLabel)
+function estimateNodeSize(
+  id: string,
+  label: string,
+  shape: string,
+  fontSize = FONT_SIZES.nodeLabel,
+  fontWeight = FONT_WEIGHTS.nodeLabel,
+  padX = NODE_PADDING.horizontal,
+  padY = NODE_PADDING.vertical,
+): { width: number; height: number } {
+  const textWidth = estimateTextWidth(label, fontSize, fontWeight)
 
-  let width = textWidth + NODE_PADDING.horizontal * 2
-  let height = FONT_SIZES.nodeLabel + NODE_PADDING.vertical * 2
+  let width = textWidth + padX * 2
+  let height = fontSize + padY * 2
 
   // Diamonds need extra space because text is inside a rotated square
   if (shape === 'diamond') {
@@ -421,6 +436,12 @@ function estimateNodeSize(id: string, label: string, shape: string): { width: nu
     const diameter = Math.ceil(Math.sqrt(width * width + height * height)) + 8
     width = shape === 'doublecircle' ? diameter + 12 : diameter
     height = width
+  }
+
+  // Stadium/pill shapes: the rounded ends (rx = height/2) eat into horizontal space,
+  // so add extra inline padding equal to the corner radius
+  if (shape === 'stadium') {
+    width += height / 2
   }
 
   // Hexagons need extra horizontal padding for the angled sides
@@ -467,6 +488,7 @@ function addSubgraphToDagre(
   g: dagre.graphlib.Graph,
   sg: MermaidSubgraph,
   graph: MermaidGraph,
+  opts: { fontSize: number; fontWeight: number; nodePaddingX: number; nodePaddingY: number },
   parentId?: string,
 ): void {
   // Register the subgraph as a compound node.
@@ -484,7 +506,7 @@ function addSubgraphToDagre(
   for (const nodeId of sg.nodeIds) {
     const node = graph.nodes.get(nodeId)
     if (node) {
-      const size = estimateNodeSize(nodeId, node.label, node.shape)
+      const size = estimateNodeSize(nodeId, node.label, node.shape, opts.fontSize, opts.fontWeight, opts.nodePaddingX, opts.nodePaddingY)
       g.setNode(nodeId, { label: node.label, width: size.width, height: size.height })
       g.setParent(nodeId, sg.id)
     }
@@ -492,7 +514,7 @@ function addSubgraphToDagre(
 
   // Add nested subgraphs recursively
   for (const child of sg.children) {
-    addSubgraphToDagre(g, child, graph, sg.id)
+    addSubgraphToDagre(g, child, graph, opts, sg.id)
   }
 }
 
@@ -568,6 +590,8 @@ function extractPositionedGraph(
   graph: MermaidGraph,
   padding: number,
   preComputed?: Map<string, PreComputedSubgraph>,
+  groupPaddingX = 16,
+  groupPaddingY = 12,
 ): PositionedGraph {
   const nodes: PositionedNode[] = []
   const groups: PositionedGroup[] = []
@@ -607,6 +631,7 @@ function extractPositionedGraph(
       width: dagreNode.width,
       height: dagreNode.height,
       inlineStyle: resolveNodeStyle(graph, nodeId),
+      rank: dagreNode.rank,
     })
   }
 
@@ -784,6 +809,18 @@ function extractPositionedGraph(
   const headerHeight = FONT_SIZES.groupHeader + 16
   expandGroupsForHeaders(groups, headerHeight)
 
+  // Expand group boxes by extra padding (left, right, bottom) beyond dagre's tight bounds
+  const extraPadX = Math.max(0, groupPaddingX - 16) // 16 is dagre's default marginx
+  const extraPadY = Math.max(0, groupPaddingY - 12) // 12 is dagre's default marginy
+  if (extraPadX > 0 || extraPadY > 0) {
+    const allGroups = flattenAllGroups(groups)
+    for (const grp of allGroups) {
+      grp.x -= extraPadX
+      grp.width += extraPadX * 2
+      grp.height += extraPadY
+    }
+  }
+
   // After expanding groups upward, some may extend above dagre's original margins.
   // Compute the global minimum Y and shift everything down uniformly if needed.
   const flatGroups = flattenAllGroups(groups)
@@ -816,6 +853,22 @@ function extractPositionedGraph(
     graphHeight = maxBottom + padding
   }
 
+  // Center Z-bend crossover segments at the midpoint between source and target
+  for (const edge of edges) {
+    edge.points = centerZBends(edge.points, verticalFirst)
+  }
+
+  // Assign rank info to edges and groups for animation sequencing
+  const nodeRankMap = new Map<string, number>()
+  for (const n of nodes) {
+    if (n.rank != null) nodeRankMap.set(n.id, n.rank)
+  }
+  for (const edge of edges) {
+    edge.sourceRank = nodeRankMap.get(edge.source)
+    edge.targetRank = nodeRankMap.get(edge.target)
+  }
+  assignGroupRanks(groups, nodeRankMap, nodes)
+
   return {
     width: graphWidth,
     height: graphHeight,
@@ -847,6 +900,27 @@ function extractGroup(
     width: dagreNode?.width ?? 0,
     height: dagreNode?.height ?? 0,
     children: sg.children.map(child => extractGroup(g, child)),
+  }
+}
+
+/** Assign rank to groups based on the min rank of nodes geometrically inside them */
+function assignGroupRanks(groups: PositionedGroup[], nodeRankMap: Map<string, number>, allNodes: PositionedNode[]): void {
+  for (const group of groups) {
+    assignGroupRanks(group.children, nodeRankMap, allNodes)
+    let minRank = Infinity
+    // Check child group ranks
+    for (const child of group.children) {
+      if (child.rank != null && child.rank < minRank) minRank = child.rank
+    }
+    // Check nodes inside this group's bounding box
+    for (const node of allNodes) {
+      if (node.rank == null) continue
+      if (node.x >= group.x && node.x + node.width <= group.x + group.width &&
+          node.y >= group.y && node.y + node.height <= group.y + group.height) {
+        if (node.rank < minRank) minRank = node.rank
+      }
+    }
+    group.rank = minRank === Infinity ? 0 : minRank
   }
 }
 
