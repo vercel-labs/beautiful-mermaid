@@ -4253,15 +4253,18 @@ function renderAnimatedEdge(edge, edgeIndex, lineWidth, bendRadius, delay, anim)
     pathD = pointsToPathD(pts);
   }
   const parts = [];
-  parts.push(
-    `<path id="${pathId}" d="${pathD}" pathLength="1" class="ae" style="--d:${delay}ms" fill="none" stroke="var(--_line)" stroke-width="${strokeWidth}" />`
-  );
   const smilSplines = cssEasingToSmil(anim.edgeEasing);
+  const durS = (anim.duration / 1e3).toFixed(3);
+  const beginS = (delay / 1e3).toFixed(3);
+  parts.push(
+    `<path id="${pathId}" d="${pathD}" pathLength="1" fill="none" stroke="var(--_line)" stroke-width="${strokeWidth}" stroke-dasharray="1" stroke-dashoffset="1" opacity="0">
+  <animate attributeName="stroke-dashoffset" from="1" to="0" dur="${durS}s" begin="${beginS}s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="${smilSplines}" />
+  <set attributeName="opacity" to="1" begin="${beginS}s" fill="freeze" />
+</path>`
+  );
   if (edge.hasArrowEnd) {
     const w = ARROW_HEAD.width;
     const hh = ARROW_HEAD.height / 2;
-    const durS = (anim.duration / 1e3).toFixed(3);
-    const beginS = (delay / 1e3).toFixed(3);
     parts.push(
       `<polygon points="0 ${-hh}, ${w} 0, 0 ${hh}" fill="var(--_arrow)" opacity="0">
   <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="${smilSplines}">
@@ -4274,8 +4277,6 @@ function renderAnimatedEdge(edge, edgeIndex, lineWidth, bendRadius, delay, anim)
   if (edge.hasArrowStart) {
     const w = ARROW_HEAD.width;
     const hh = ARROW_HEAD.height / 2;
-    const durS = (anim.duration / 1e3).toFixed(3);
-    const beginS = (delay / 1e3).toFixed(3);
     parts.push(
       `<polygon points="${w} ${-hh}, 0 0, ${w} ${hh}" fill="var(--_arrow)" opacity="0">
   <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" rotate="auto" keyPoints="1;0" keyTimes="0;1" calcMode="spline" keySplines="${smilSplines}">

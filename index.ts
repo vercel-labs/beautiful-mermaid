@@ -103,18 +103,18 @@ async function generateHtml(): Promise<string> {
     Flowchart: '#3b82f6',
     State: '#8b5cf6',
     Sequence: '#10b981',
-    Class: '#f59e0b',
-    ER: '#ef4444',
+
     'Theme Showcase': '#06b6d4',
+    'Animation': '#f472b6',
   }
 
   // Map category names to the title prefixes they use, so we can strip duplicates in the ToC
   const categoryPrefixes: Record<string, string> = {
     'State': 'State: ',
     'Sequence': 'Sequence: ',
-    'Class': 'Class: ',
-    'ER': 'ER: ',
+
     'Theme Showcase': 'Theme: ',
+    'Animation': 'Animation: ',
   }
 
   // Build mapping from original index to display number (excluding Hero samples)
@@ -141,42 +141,11 @@ async function generateHtml(): Promise<string> {
         </div>`
   }).join('\n')
 
-  // Step 3b: Build theme selector pills (build-time so we include swatches)
-  // Only show Default, Dracula, and Solarized inline; rest go in "More" dropdown
-  const VISIBLE_THEMES = new Set(['dracula', 'solarized-light'])
-
-  function buildThemePill(key: string, colors: { bg: string; fg: string }, active = false): string {
-    const isDark = parseInt(colors.bg.replace('#', '').slice(0, 2), 16) < 0x80
-    const shadow = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'
-    const label = key === '' ? 'Default' : (THEME_LABELS[key] ?? key)
-    const activeClass = active ? ' active' : ''
-    return `<button class="theme-pill shadow-minimal${activeClass}" data-theme="${key}"><span class="theme-swatch" style="background:${colors.bg};box-shadow:inset 0 0 0 1px ${shadow}"></span>${escapeHtml(label)}</button>`
-  }
-
-  const themeEntries = Object.entries(THEMES)
-  // Visible inline pills: Default + Dracula + Solarized
-  const visiblePills = [
-    '<button class="theme-pill shadow-minimal active" data-theme=""><span class="theme-swatch" style="background:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.1)"></span>Default</button>',
-    ...themeEntries
-      .filter(([key]) => VISIBLE_THEMES.has(key))
-      .map(([key, colors]) => buildThemePill(key, colors)),
-  ]
-  // All themes go in the dropdown (including Default, Dracula, Solarized)
-  const allDropdownPills = [
-    buildThemePill('', { bg: '#FFFFFF', fg: '#27272A' }, true),
-    ...themeEntries.map(([key, colors]) => buildThemePill(key, colors)),
-  ]
-  const totalThemes = allDropdownPills.length
-
+  // Step 3b: Build theme selector pills — only Vercel Dark + Vercel Light
   const themePillsHtml = `
     <div class="theme-pills-inline">
-      ${visiblePills.join('\n      ')}
-    </div>
-    <div class="theme-more-wrapper">
-      <button class="theme-pill shadow-minimal" id="theme-more-btn">${totalThemes} Themes</button>
-      <div class="theme-more-dropdown shadow-modal-small" id="theme-more-dropdown">
-        ${allDropdownPills.join('\n        ')}
-      </div>
+      <button class="theme-pill shadow-minimal active" data-theme=""><span class="theme-swatch" style="background:#0A0A0A;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.15)"></span>Vercel Dark</button>
+      <button class="theme-pill shadow-minimal" data-theme="vercel-light"><span class="theme-swatch" style="background:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.1)"></span>Vercel Light</button>
     </div>`
 
   // Step 4: Pre-highlight all sample sources with Shiki (build-time only, zero runtime cost).
@@ -221,8 +190,10 @@ async function generateHtml(): Promise<string> {
       </div>
     </section>`)
     } else {
+      const isAnimated = !!sample.options?.animate
+      const replayBtn = isAnimated ? `<button class="replay-btn" data-replay="${i}" title="Replay animation">&#x27F3;</button>` : ''
       regularCards.push(`
-    <section class="sample" id="sample-${i}">
+    <section class="sample" id="sample-${i}"${isAnimated ? ' data-animated="true"' : ''}>
       <div class="sample-header">
         <h2>${escapeHtml(sample.title)}</h2>
         <p class="description">${formatDescription(sample.description)}</p>
@@ -233,6 +204,7 @@ async function generateHtml(): Promise<string> {
           ${sample.options ? `<div class="options"><strong>Options:</strong> <code>${escapeHtml(JSON.stringify(sample.options))}</code></div>` : ''}
         </div>
         <div class="svg-panel" id="svg-panel-${i}" data-sample-bg="${bg}">
+          ${replayBtn}
           <div class="svg-container" id="svg-${i}">
             <div class="loading-spinner"></div>
           </div>
@@ -257,7 +229,7 @@ async function generateHtml(): Promise<string> {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" id="theme-color-meta" content="#f9f9fa" />
+  <meta name="theme-color" id="theme-color-meta" content="#131313" />
   <title>Beautiful Mermaid — Mermaid Rendering, Made Beautiful</title>
   <meta name="description" content="Open source diagram rendering library built for the AI era. Ultra-fast, fully themeable, outputs to SVG and ASCII. Supports Flowchart, State, Sequence, Class, and ER diagrams." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -288,14 +260,14 @@ async function generateHtml(): Promise<string> {
      * <body> — and the whole page adapts instantly.
      * ----------------------------------------------------------------- */
     body {
-      --t-bg: #FFFFFF;
-      --t-fg: #27272A;
-      --t-accent: #3b82f6;
-      --foreground-rgb: 39, 39, 42;
-      --accent-rgb: 59, 130, 246;
-      --shadow-border-opacity: 0.08;
-      --shadow-blur-opacity: 0.06;
-      --theme-bar-bg: #f9f9fa;  /* Mixed bg for theme bar and top gradient — updated by JS on theme change */
+      --t-bg: #0A0A0A;
+      --t-fg: #EDEDED;
+      --t-accent: #EDEDED;
+      --foreground-rgb: 237, 237, 237;
+      --accent-rgb: 237, 237, 237;
+      --shadow-border-opacity: 0.15;
+      --shadow-blur-opacity: 0.12;
+      --theme-bar-bg: #131313;  /* Mixed bg for theme bar and top gradient — updated by JS on theme change */
 
       font-family: 'Geist', system-ui, -apple-system, sans-serif;
       background: color-mix(in srgb, var(--t-fg) 4%, var(--t-bg));
@@ -890,6 +862,33 @@ async function generateHtml(): Promise<string> {
       to { transform: rotate(360deg); }
     }
 
+    /* -- Replay button (animated samples) -- */
+    .svg-panel { position: relative; }
+    .replay-btn {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: color-mix(in srgb, var(--t-fg) 10%, var(--t-bg));
+      color: color-mix(in srgb, var(--t-fg) 50%, var(--t-bg));
+      font-size: 14px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.15s, color 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    .svg-panel:hover .replay-btn { opacity: 1; }
+    .replay-btn:hover {
+      background: color-mix(in srgb, var(--t-fg) 18%, var(--t-bg));
+      color: var(--t-fg);
+    }
+
     /* -- Timing badge -- */
     .timing {
       font-size: 0.7rem;
@@ -1171,12 +1170,12 @@ ${bundleJs}
 
   function setShadowVars(theme) {
     var body = document.body;
-    var fg = theme ? theme.fg : '#27272A';
-    var bg = theme ? theme.bg : '#FFFFFF';
-    var accent = theme ? (theme.accent || '#3b82f6') : '#3b82f6';
-    var fgRgb = hexToRgb(fg) || { r: 39, g: 39, b: 42 };
-    var bgRgb = hexToRgb(bg) || { r: 255, g: 255, b: 255 };
-    var accentRgb = hexToRgb(accent) || { r: 59, g: 130, b: 246 };
+    var fg = theme ? theme.fg : '#EDEDED';
+    var bg = theme ? theme.bg : '#0A0A0A';
+    var accent = theme ? (theme.accent || '#EDEDED') : '#EDEDED';
+    var fgRgb = hexToRgb(fg) || { r: 237, g: 237, b: 237 };
+    var bgRgb = hexToRgb(bg) || { r: 10, g: 10, b: 10 };
+    var accentRgb = hexToRgb(accent) || { r: 237, g: 237, b: 237 };
     var brightness = (bgRgb.r * 299 + bgRgb.g * 587 + bgRgb.b * 114) / 1000;
     var darkMode = brightness < 140;
 
@@ -1224,14 +1223,14 @@ ${bundleJs}
     if (theme) {
       body.style.setProperty('--t-bg', theme.bg);
       body.style.setProperty('--t-fg', theme.fg);
-      body.style.setProperty('--t-accent', theme.accent || '#3b82f6');
+      body.style.setProperty('--t-accent', theme.accent || '#EDEDED');
     } else {
-      body.style.setProperty('--t-bg', '#FFFFFF');
-      body.style.setProperty('--t-fg', '#27272A');
-      body.style.setProperty('--t-accent', '#3b82f6');
+      body.style.setProperty('--t-bg', '#0A0A0A');
+      body.style.setProperty('--t-fg', '#EDEDED');
+      body.style.setProperty('--t-accent', '#EDEDED');
     }
     setShadowVars(theme);
-    updateThemeColor(theme ? theme.fg : '#27272A', theme ? theme.bg : '#FFFFFF');
+    updateThemeColor(theme ? theme.fg : '#EDEDED', theme ? theme.bg : '#0A0A0A');
 
     // 2. Update all rendered SVG elements' CSS variables
     var svgs = document.querySelectorAll('.svg-container svg');
@@ -1417,13 +1416,42 @@ ${bundleJs}
     }
   });
 
+  // -- Replay button for animated samples --
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.replay-btn');
+    if (!btn) return;
+    var idx = parseInt(btn.getAttribute('data-replay'), 10);
+    var sample = samples[idx];
+    if (!sample) return;
+    var container = document.getElementById('svg-' + idx);
+    if (!container) return;
+    renderMermaid(sample.source, sample.options).then(function(svg) {
+      container.innerHTML = svg;
+      // Re-apply theme if active
+      var activeTheme = localStorage.getItem('mermaid-theme');
+      if (activeTheme && THEMES[activeTheme]) {
+        var svgEl = container.querySelector('svg');
+        if (svgEl) {
+          var th = THEMES[activeTheme];
+          svgEl.style.setProperty('--bg', th.bg);
+          svgEl.style.setProperty('--fg', th.fg);
+          var enrichment = ['line', 'accent', 'muted', 'surface', 'border'];
+          for (var k = 0; k < enrichment.length; k++) {
+            if (th[enrichment[k]]) svgEl.style.setProperty('--' + enrichment[k], th[enrichment[k]]);
+            else svgEl.style.removeProperty('--' + enrichment[k]);
+          }
+        }
+      }
+    });
+  });
+
   // -- Restore saved theme immediately (before rendering begins) --
   var savedTheme = localStorage.getItem('mermaid-theme');
   if (savedTheme && THEMES[savedTheme]) {
     // Apply page-level CSS variables right away to avoid flash
     document.body.style.setProperty('--t-bg', THEMES[savedTheme].bg);
     document.body.style.setProperty('--t-fg', THEMES[savedTheme].fg);
-    document.body.style.setProperty('--t-accent', THEMES[savedTheme].accent || '#3b82f6');
+    document.body.style.setProperty('--t-accent', THEMES[savedTheme].accent || '#EDEDED');
     setShadowVars(THEMES[savedTheme]);
     updateThemeColor(THEMES[savedTheme].fg, THEMES[savedTheme].bg);
     // Mark the correct pill as active
@@ -1443,11 +1471,11 @@ ${bundleJs}
 
   var totalStart = performance.now();
 
-  for (var i = 0; i < samples.length; i++) {
-    var sample = samples[i];
-    var svgContainer = document.getElementById('svg-' + i);
-    var asciiContainer = document.getElementById('ascii-' + i);
-    var svgPanel = document.getElementById('svg-panel-' + i);
+  for (var si = 0; si < samples.length; si++) {
+    var sample = samples[si];
+    var svgContainer = document.getElementById('svg-' + si);
+    var asciiContainer = document.getElementById('ascii-' + si);
+    var svgPanel = document.getElementById('svg-panel-' + si);
 
     // Render SVG — wrapped in a timeout guard so a stalled layout
     // doesn't block all remaining diagrams from rendering.

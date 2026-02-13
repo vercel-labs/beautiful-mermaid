@@ -185,22 +185,27 @@ function renderAnimatedEdge(
 
   const parts: string[] = []
 
-  // Edge line with draw-in animation
+  // SMIL timing — shared by edge line + arrowhead so they use the same animation engine
+  const smilSplines = cssEasingToSmil(anim.edgeEasing)
+  const durS = (anim.duration / 1000).toFixed(3)
+  const beginS = (delay / 1000).toFixed(3)
+
+  // Edge line with SMIL draw-in animation (not CSS — SMIL stays synced with arrowhead)
   parts.push(
     `<path id="${pathId}" d="${pathD}" pathLength="1" ` +
-    `class="ae" style="--d:${delay}ms" ` +
-    `fill="none" stroke="var(--_line)" stroke-width="${strokeWidth}" />`
+    `fill="none" stroke="var(--_line)" stroke-width="${strokeWidth}" ` +
+    `stroke-dasharray="1" stroke-dashoffset="1" opacity="0">` +
+    `\n  <animate attributeName="stroke-dashoffset" from="1" to="0" ` +
+    `dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
+    `calcMode="spline" keyTimes="0;1" keySplines="${smilSplines}" />` +
+    `\n  <set attributeName="opacity" to="1" begin="${beginS}s" fill="freeze" />` +
+    `\n</path>`
   )
-
-  // SMIL keySplines derived from edgeEasing — keeps arrow perfectly synced with line
-  const smilSplines = cssEasingToSmil(anim.edgeEasing)
 
   // Animated arrowhead (travels along path via SMIL animateMotion)
   if (edge.hasArrowEnd) {
     const w = ARROW_HEAD.width
     const hh = ARROW_HEAD.height / 2
-    const durS = (anim.duration / 1000).toFixed(3)
-    const beginS = (delay / 1000).toFixed(3)
     parts.push(
       `<polygon points="0 ${-hh}, ${w} 0, 0 ${hh}" fill="var(--_arrow)" opacity="0">` +
       `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
@@ -217,8 +222,6 @@ function renderAnimatedEdge(
   if (edge.hasArrowStart) {
     const w = ARROW_HEAD.width
     const hh = ARROW_HEAD.height / 2
-    const durS = (anim.duration / 1000).toFixed(3)
-    const beginS = (delay / 1000).toFixed(3)
     parts.push(
       `<polygon points="${w} ${-hh}, 0 0, ${w} ${hh}" fill="var(--_arrow)" opacity="0">` +
       `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +

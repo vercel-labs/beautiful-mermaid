@@ -47,16 +47,19 @@ ${e.reducedMotion?`
     <rect width="6" height="6" fill="var(--bg)" />
     <line x1="0" y1="0" x2="0" y2="6" stroke="#171717" stroke-width="3" />
   </pattern>`),M.push("</defs>");for(let L of e.groups){let y=$?.groups.get(L.id);i&&y!=null?(M.push(`<g class="ag" style="--d:${y}ms">`),M.push(Rn(L,m,v)),M.push("</g>")):M.push(Tn(L,m,v));}for(let L=0;L<e.edges.length;L++){let y=e.edges[L],b=$?.edges.get(L);i&&b!=null&&i.edgeAnimation==="draw"?M.push(oo(y,L,u,s,b,i)):i&&b!=null&&i.edgeAnimation==="fade"?(M.push(`<g class="an" style="--d:${b}ms">`),M.push(Dt(y,u,s)),M.push("</g>")):M.push(Dt(y,u,s));}for(let L of e.groups){let y=$?.groups.get(L.id);i&&y!=null?(M.push(`<g class="an" style="--d:${y}ms">`),M.push(Nn(L,r,f,p,x,g)),M.push("</g>")):M.push(In(L,r,f,p,x,g));}for(let L=0;L<e.edges.length;L++){let y=e.edges[L];if(y.label){let b=$?.edges.get(L);i&&b!=null?(M.push(`<g class="ael" style="--d:${b}ms">`),M.push(An(y,r,a)),M.push("</g>")):M.push(An(y,r,a));}}if(i)for(let L of e.nodes){let y=$?.nodes.get(L.id)??0;M.push(`<g class="an" style="--d:${y}ms">`),M.push(Ln(L,d)),M.push(Pn(L,r,c,l,h)),M.push("</g>");}else {for(let L of e.nodes)M.push(Ln(L,d));for(let L of e.nodes)M.push(Pn(L,r,c,l,h));}return M.push("</svg>"),M.join(`
-`)}function oo(e,n,r,t,o,i){if(e.points.length<2)return "";let c=e.style==="thick"?r*2:r;if(e.style==="dotted")return `<g class="an" style="--d:${o}ms">${Dt(e,r,t)}</g>`;let a=e.points.map(s=>({...s}));if(e.hasArrowEnd&&a.length>=2){let s=ge.width+2,f=a[a.length-1],p=a[a.length-2],x=f.x-p.x,g=f.y-p.y,m=Math.sqrt(x*x+g*g);m>s&&(f.x-=x/m*s,f.y-=g/m*s);}let l=`e${n}`,h;t>0&&a.length>2?h=Gn(a,t):h=io(a);let d=[];d.push(`<path id="${l}" d="${h}" pathLength="1" class="ae" style="--d:${o}ms" fill="none" stroke="var(--_line)" stroke-width="${c}" />`);let u=Mn(i.edgeEasing);if(e.hasArrowEnd){let s=ge.width,f=ge.height/2,p=(i.duration/1e3).toFixed(3),x=(o/1e3).toFixed(3);d.push(`<polygon points="0 ${-f}, ${s} 0, 0 ${f}" fill="var(--_arrow)" opacity="0">
-  <animateMotion dur="${p}s" begin="${x}s" fill="freeze" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="${u}">
+`)}function oo(e,n,r,t,o,i){if(e.points.length<2)return "";let c=e.style==="thick"?r*2:r;if(e.style==="dotted")return `<g class="an" style="--d:${o}ms">${Dt(e,r,t)}</g>`;let a=e.points.map(p=>({...p}));if(e.hasArrowEnd&&a.length>=2){let p=ge.width+2,x=a[a.length-1],g=a[a.length-2],m=x.x-g.x,v=x.y-g.y,$=Math.sqrt(m*m+v*v);$>p&&(x.x-=m/$*p,x.y-=v/$*p);}let l=`e${n}`,h;t>0&&a.length>2?h=Gn(a,t):h=io(a);let d=[],u=Mn(i.edgeEasing),s=(i.duration/1e3).toFixed(3),f=(o/1e3).toFixed(3);if(d.push(`<path id="${l}" d="${h}" pathLength="1" fill="none" stroke="var(--_line)" stroke-width="${c}" stroke-dasharray="1" stroke-dashoffset="1" opacity="0">
+  <animate attributeName="stroke-dashoffset" from="1" to="0" dur="${s}s" begin="${f}s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="${u}" />
+  <set attributeName="opacity" to="1" begin="${f}s" fill="freeze" />
+</path>`),e.hasArrowEnd){let p=ge.width,x=ge.height/2;d.push(`<polygon points="0 ${-x}, ${p} 0, 0 ${x}" fill="var(--_arrow)" opacity="0">
+  <animateMotion dur="${s}s" begin="${f}s" fill="freeze" rotate="auto" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="${u}">
     <mpath href="#${l}" />
   </animateMotion>
-  <set attributeName="opacity" to="1" begin="${x}s" fill="freeze" />
-</polygon>`);}if(e.hasArrowStart){let s=ge.width,f=ge.height/2,p=(i.duration/1e3).toFixed(3),x=(o/1e3).toFixed(3);d.push(`<polygon points="${s} ${-f}, 0 0, ${s} ${f}" fill="var(--_arrow)" opacity="0">
-  <animateMotion dur="${p}s" begin="${x}s" fill="freeze" rotate="auto" keyPoints="1;0" keyTimes="0;1" calcMode="spline" keySplines="${u}">
+  <set attributeName="opacity" to="1" begin="${f}s" fill="freeze" />
+</polygon>`);}if(e.hasArrowStart){let p=ge.width,x=ge.height/2;d.push(`<polygon points="${p} ${-x}, 0 0, ${p} ${x}" fill="var(--_arrow)" opacity="0">
+  <animateMotion dur="${s}s" begin="${f}s" fill="freeze" rotate="auto" keyPoints="1;0" keyTimes="0;1" calcMode="spline" keySplines="${u}">
     <mpath href="#${l}" />
   </animateMotion>
-  <set attributeName="opacity" to="1" begin="${x}s" fill="freeze" />
+  <set attributeName="opacity" to="1" begin="${f}s" fill="freeze" />
 </polygon>`);}return d.join(`
 `)}function io(e){return e.length===0?"":"M"+e.map(n=>`${n.x},${n.y}`).join(" L")}function so(){let e=ge.width,n=ge.height;return `  <marker id="arrowhead" markerWidth="${e}" markerHeight="${n}" refX="0" refY="${n/2}" orient="auto" markerUnits="userSpaceOnUse" overflow="visible">
     <polygon points="0 0, ${e} ${n/2}, 0 ${n}" fill="var(--_arrow)" />

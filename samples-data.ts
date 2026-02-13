@@ -16,7 +16,7 @@ export interface Sample {
   source: string
   /** Optional category tag for grouping in the Table of Contents */
   category?: string
-  options?: { bg?: string; fg?: string; line?: string; accent?: string; muted?: string; surface?: string; border?: string; font?: string; padding?: number; transparent?: boolean }
+  options?: { bg?: string; fg?: string; line?: string; accent?: string; muted?: string; surface?: string; border?: string; font?: string; padding?: number; transparent?: boolean; animate?: boolean | { nodeAnimation?: string; edgeAnimation?: string; duration?: number; stagger?: number; groupDelay?: number; nodeOverlap?: number; nodeEasing?: string; edgeEasing?: string; reducedMotion?: boolean } }
 }
 
 export const samples: Sample[] = [
@@ -215,16 +215,7 @@ export const samples: Sample[] = [
   //  FLOWCHART — Styling
   // ══════════════════════════════════════════════════════════════════════════
 
-  {
-    title: '::: Class Shorthand',
-    category: 'Flowchart',
-    description: 'Assigning classes with `:::` syntax directly on node definitions.',
-    source: `graph TD
-  A[Normal]:::default --> B[Highlighted]:::highlight --> C[Error]:::error
-  classDef default fill:#f4f4f5,stroke:#a1a1aa
-  classDef highlight fill:#fbbf24,stroke:#d97706
-  classDef error fill:#ef4444,stroke:#dc2626`,
-  },
+
   {
     title: 'Inline Style Overrides',
     category: 'Flowchart',
@@ -593,509 +584,55 @@ export const samples: Sample[] = [
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  CLASS DIAGRAMS — Core Features
+  //  ANIMATION — Entrance animations (CSS + SMIL)
   // ══════════════════════════════════════════════════════════════════════════
 
   {
-    title: 'Class: Basic Class',
-    category: 'Class',
-    description: 'A single class with attributes and methods, rendered as a 3-compartment box.',
-    source: `classDiagram
-  class Animal {
-    +String name
-    +int age
-    +eat() void
-    +sleep() void
-  }`,
+    title: 'Default Animation',
+    category: 'Animation',
+    description: 'Cascade entrance: nodes fade in rank-by-rank, edges draw between them.',
+    source: `graph TD
+  A[Request] --> B{Cache Hit?}
+  B -->|Yes| C[Return Cached]
+  B -->|No| D[Fetch Origin]
+  D --> E[Store in Cache]
+  E --> C
+  C --> F[Response]`,
+    options: { animate: true },
   },
   {
-    title: 'Class: Visibility Markers',
-    category: 'Class',
-    description: 'All four visibility levels: `+` (public), `-` (private), `#` (protected), `~` (package).',
-    source: `classDiagram
-  class User {
-    +String name
-    -String password
-    #int internalId
-    ~String packageField
-    +login() bool
-    -hashPassword() String
-    #validate() void
-    ~notify() void
-  }`,
+    title: 'Animation: Fade-Up Entrance',
+    category: 'Animation',
+    description: 'Nodes slide up as they appear. Subgraph containers animate with group delay.',
+    source: `graph TD
+  subgraph Frontend
+    A[React App] --> B[State Manager]
+  end
+  subgraph Backend
+    C[API Server] --> D[Database]
+  end
+  B --> C`,
+    options: { animate: { nodeAnimation: 'fade-up' } },
   },
   {
-    title: 'Class: Interface Annotation',
-    category: 'Class',
-    description: 'Using `<<interface>>` annotation above the class name.',
-    source: `classDiagram
-  class Serializable {
-    <<interface>>
-    +serialize() String
-    +deserialize(data) void
-  }`,
+    title: 'Animation: Scale Entrance',
+    category: 'Animation',
+    description: 'Nodes scale up from center. Works well with state diagrams.',
+    source: `stateDiagram-v2
+  [*] --> Idle
+  Idle --> Loading : fetch
+  Loading --> Success : resolve
+  Loading --> Error : reject
+  Error --> Idle : retry
+  Success --> [*]`,
+    options: { animate: { nodeAnimation: 'scale', duration: 800 } },
   },
   {
-    title: 'Class: Abstract Annotation',
-    category: 'Class',
-    description: 'Using `<<abstract>>` annotation for abstract classes.',
-    source: `classDiagram
-  class Shape {
-    <<abstract>>
-    +String color
-    +area() double
-    +draw() void
-  }`,
-  },
-  {
-    title: 'Class: Enum Annotation',
-    category: 'Class',
-    description: 'Using `<<enumeration>>` annotation for enum types.',
-    source: `classDiagram
-  class Status {
-    <<enumeration>>
-    ACTIVE
-    INACTIVE
-    PENDING
-    DELETED
-  }`,
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  CLASS DIAGRAMS — Relationships
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    title: 'Class: Inheritance (<|--)',
-    category: 'Class',
-    description: 'Inheritance relationship rendered with a hollow triangle marker.',
-    source: `classDiagram
-  class Animal {
-    +String name
-    +eat() void
-  }
-  class Dog {
-    +String breed
-    +bark() void
-  }
-  class Cat {
-    +bool isIndoor
-    +meow() void
-  }
-  Animal <|-- Dog
-  Animal <|-- Cat`,
-  },
-  {
-    title: 'Class: Composition (*--)',
-    category: 'Class',
-    description: 'Composition — "owns" relationship with filled diamond marker.',
-    source: `classDiagram
-  class Car {
-    +String model
-    +start() void
-  }
-  class Engine {
-    +int horsepower
-    +rev() void
-  }
-  Car *-- Engine`,
-  },
-  {
-    title: 'Class: Aggregation (o--)',
-    category: 'Class',
-    description: 'Aggregation — "has" relationship with hollow diamond marker.',
-    source: `classDiagram
-  class University {
-    +String name
-  }
-  class Department {
-    +String faculty
-  }
-  University o-- Department`,
-  },
-  {
-    title: 'Class: Association (-->)',
-    category: 'Class',
-    description: 'Basic association — simple directed arrow.',
-    source: `classDiagram
-  class Customer {
-    +String name
-  }
-  class Order {
-    +int orderId
-  }
-  Customer --> Order`,
-  },
-  {
-    title: 'Class: Dependency (..>)',
-    category: 'Class',
-    description: 'Dependency — dashed line with open arrow.',
-    source: `classDiagram
-  class Service {
-    +process() void
-  }
-  class Repository {
-    +find() Object
-  }
-  Service ..> Repository`,
-  },
-  {
-    title: 'Class: Realization (..|>)',
-    category: 'Class',
-    description: 'Realization — dashed line with hollow triangle (implements interface).',
-    source: `classDiagram
-  class Flyable {
-    <<interface>>
-    +fly() void
-  }
-  class Bird {
-    +fly() void
-    +sing() void
-  }
-  Bird ..|> Flyable`,
-  },
-  {
-    title: 'Class: All 6 Relationship Types',
-    category: 'Class',
-    description: 'Every relationship type in a single diagram for comparison.',
-    source: `classDiagram
-  A <|-- B : inheritance
-  C *-- D : composition
-  E o-- F : aggregation
-  G --> H : association
-  I ..> J : dependency
-  K ..|> L : realization`,
-  },
-  {
-    title: 'Class: Relationship Labels',
-    category: 'Class',
-    description: 'Labeled relationships between classes with descriptive text.',
-    source: `classDiagram
-  class Teacher {
-    +String name
-  }
-  class Student {
-    +String name
-  }
-  class Course {
-    +String title
-  }
-  Teacher --> Course : teaches
-  Student --> Course : enrolled in`,
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  CLASS DIAGRAMS — Complex / Real-World
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    title: 'Class: Design Pattern — Observer',
-    category: 'Class',
-    description: 'The Observer (publish-subscribe) design pattern with interface + concrete implementations.',
-    source: `classDiagram
-  class Subject {
-    <<interface>>
-    +attach(Observer) void
-    +detach(Observer) void
-    +notify() void
-  }
-  class Observer {
-    <<interface>>
-    +update() void
-  }
-  class EventEmitter {
-    -List~Observer~ observers
-    +attach(Observer) void
-    +detach(Observer) void
-    +notify() void
-  }
-  class Logger {
-    +update() void
-  }
-  class Alerter {
-    +update() void
-  }
-  Subject <|.. EventEmitter
-  Observer <|.. Logger
-  Observer <|.. Alerter
-  EventEmitter --> Observer`,
-  },
-  {
-    title: 'Class: MVC Architecture',
-    category: 'Class',
-    description: 'Model-View-Controller pattern showing relationships between layers.',
-    source: `classDiagram
-  class Model {
-    -data Map
-    +getData() Map
-    +setData(key, val) void
-    +notify() void
-  }
-  class View {
-    -model Model
-    +render() void
-    +update() void
-  }
-  class Controller {
-    -model Model
-    -view View
-    +handleInput(event) void
-    +updateModel(data) void
-  }
-  Controller --> Model : updates
-  Controller --> View : refreshes
-  View --> Model : reads
-  Model ..> View : notifies`,
-  },
-  {
-    title: 'Class: Full Hierarchy',
-    category: 'Class',
-    description: 'A complete class hierarchy with abstract base, interfaces, and concrete classes.',
-    source: `classDiagram
-  class Animal {
-    <<abstract>>
-    +String name
-    +int age
-    +eat() void
-    +sleep() void
-  }
-  class Mammal {
-    +bool warmBlooded
-    +nurse() void
-  }
-  class Bird {
-    +bool canFly
-    +layEggs() void
-  }
-  class Dog {
-    +String breed
-    +bark() void
-  }
-  class Cat {
-    +bool isIndoor
-    +purr() void
-  }
-  class Parrot {
-    +String vocabulary
-    +speak() void
-  }
-  Animal <|-- Mammal
-  Animal <|-- Bird
-  Mammal <|-- Dog
-  Mammal <|-- Cat
-  Bird <|-- Parrot`,
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  ER DIAGRAMS — Core Features
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    title: 'ER: Basic Relationship',
-    category: 'ER',
-    description: 'A simple one-to-many relationship between two entities.',
-    source: `erDiagram
-  CUSTOMER ||--o{ ORDER : places`,
-  },
-  {
-    title: 'ER: Entity with Attributes',
-    category: 'ER',
-    description: 'An entity with typed attributes and `PK`/`FK`/`UK` key badges.',
-    source: `erDiagram
-  CUSTOMER {
-    int id PK
-    string name
-    string email UK
-    date created_at
-  }`,
-  },
-  {
-    title: 'ER: Attribute Keys (PK, FK, UK)',
-    category: 'ER',
-    description: 'All three key constraint types rendered as badges.',
-    source: `erDiagram
-  ORDER {
-    int id PK
-    int customer_id FK
-    string invoice_number UK
-    decimal total
-    date order_date
-    string status
-  }`,
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  ER DIAGRAMS — Cardinality Types
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    title: 'ER: Exactly One to Exactly One (||--||)',
-    category: 'ER',
-    description: 'One-to-one mandatory relationship.',
-    source: `erDiagram
-  PERSON ||--|| PASSPORT : has`,
-  },
-  {
-    title: 'ER: Exactly One to Zero-or-Many (||--o{)',
-    category: 'ER',
-    description: 'Classic one-to-many optional relationship (crow\'s foot).',
-    source: `erDiagram
-  CUSTOMER ||--o{ ORDER : places`,
-  },
-  {
-    title: 'ER: Zero-or-One to One-or-Many (|o--|{)',
-    category: 'ER',
-    description: 'Optional on one side, at-least-one on the other.',
-    source: `erDiagram
-  SUPERVISOR |o--|{ EMPLOYEE : manages`,
-  },
-  {
-    title: 'ER: One-or-More to Zero-or-Many (}|--o{)',
-    category: 'ER',
-    description: 'At-least-one to zero-or-many relationship.',
-    source: `erDiagram
-  TEACHER }|--o{ COURSE : teaches`,
-  },
-  {
-    title: 'ER: All Cardinality Types',
-    category: 'ER',
-    description: 'Every cardinality combination in one diagram.',
-    source: `erDiagram
-  A ||--|| B : one-to-one
-  C ||--o{ D : one-to-many
-  E |o--|{ F : opt-to-many
-  G }|--o{ H : many-to-many`,
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  ER DIAGRAMS — Line Styles
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    title: 'ER: Identifying (Solid) Relationship',
-    category: 'ER',
-    description: 'Solid line indicating an identifying relationship (child depends on parent for identity).',
-    source: `erDiagram
-  ORDER ||--|{ LINE_ITEM : contains`,
-  },
-  {
-    title: 'ER: Non-Identifying (Dashed) Relationship',
-    category: 'ER',
-    description: 'Dashed line indicating a non-identifying relationship.',
-    source: `erDiagram
-  USER ||..o{ LOG_ENTRY : generates
-  USER ||..o{ SESSION : opens`,
-  },
-  {
-    title: 'ER: Mixed Identifying & Non-Identifying',
-    category: 'ER',
-    description: 'Both solid and dashed lines in the same diagram.',
-    source: `erDiagram
-  ORDER ||--|{ LINE_ITEM : contains
-  ORDER ||..o{ SHIPMENT : ships-via
-  PRODUCT ||--o{ LINE_ITEM : includes
-  PRODUCT ||..o{ REVIEW : receives`,
-  },
-
-  // ══════════════════════════════════════════════════════════════════════════
-  //  ER DIAGRAMS — Complex / Real-World
-  // ══════════════════════════════════════════════════════════════════════════
-
-  {
-    title: 'ER: E-Commerce Schema',
-    category: 'ER',
-    description: 'Full e-commerce database schema with customers, orders, products, and line items.',
-    source: `erDiagram
-  CUSTOMER {
-    int id PK
-    string name
-    string email UK
-  }
-  ORDER {
-    int id PK
-    date created
-    int customer_id FK
-  }
-  PRODUCT {
-    int id PK
-    string name
-    float price
-  }
-  LINE_ITEM {
-    int id PK
-    int order_id FK
-    int product_id FK
-    int quantity
-  }
-  CUSTOMER ||--o{ ORDER : places
-  ORDER ||--|{ LINE_ITEM : contains
-  PRODUCT ||--o{ LINE_ITEM : includes`,
-  },
-  {
-    title: 'ER: Blog Platform Schema',
-    category: 'ER',
-    description: 'Blog system with users, posts, comments, and tags.',
-    source: `erDiagram
-  USER {
-    int id PK
-    string username UK
-    string email UK
-    date joined
-  }
-  POST {
-    int id PK
-    string title
-    text content
-    int author_id FK
-    date published
-  }
-  COMMENT {
-    int id PK
-    text body
-    int post_id FK
-    int user_id FK
-    date created
-  }
-  TAG {
-    int id PK
-    string name UK
-  }
-  USER ||--o{ POST : writes
-  USER ||--o{ COMMENT : authors
-  POST ||--o{ COMMENT : has
-  POST }|--o{ TAG : tagged-with`,
-  },
-  {
-    title: 'ER: School Management Schema',
-    category: 'ER',
-    description: 'School system with students, teachers, courses, and enrollments.',
-    source: `erDiagram
-  STUDENT {
-    int id PK
-    string name
-    date dob
-    string grade
-  }
-  TEACHER {
-    int id PK
-    string name
-    string department
-  }
-  COURSE {
-    int id PK
-    string title
-    int teacher_id FK
-    int credits
-  }
-  ENROLLMENT {
-    int id PK
-    int student_id FK
-    int course_id FK
-    string semester
-    float grade
-  }
-  TEACHER ||--o{ COURSE : teaches
-  STUDENT ||--o{ ENROLLMENT : enrolled
-  COURSE ||--o{ ENROLLMENT : has`,
+    title: 'Animation: Custom Timing',
+    category: 'Animation',
+    description: 'Fast stagger with high overlap — nodes appear almost immediately after their edge starts drawing.',
+    source: `graph LR
+  A[Input] --> B[Validate] --> C[Transform] --> D[Enrich] --> E[Store] --> F[Notify] --> G[Done]`,
+    options: { animate: { stagger: 60, nodeOverlap: 0.5, duration: 500 } },
   },
 ]
