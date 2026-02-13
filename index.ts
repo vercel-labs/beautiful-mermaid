@@ -231,12 +231,12 @@ async function generateHtml(): Promise<string> {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" id="theme-color-meta" content="#131313" />
   <title>Beautiful Mermaid — Mermaid Rendering, Made Beautiful</title>
-  <meta name="description" content="Open source diagram rendering library built for the AI era. Ultra-fast, fully themeable, outputs to SVG and ASCII. Supports Flowchart, State, Sequence, Class, and ER diagrams." />
+  <meta name="description" content="Vercel's fork of beautiful-mermaid by Craft. Ultra-fast, fully themeable diagram rendering — SVG and ASCII output." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <meta property="og:title" content="Beautiful Mermaid" />
-  <meta property="og:description" content="Open source diagram rendering library built for the AI era. Ultra-fast, fully themeable, outputs to SVG and ASCII." />
+  <meta property="og:description" content="Vercel's fork of beautiful-mermaid by Craft. Ultra-fast, fully themeable diagram rendering — SVG and ASCII output." />
   <meta property="og:image" content="https://lukilabs.github.io/beautiful-mermaid/og-image.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://lukilabs.github.io/beautiful-mermaid" />
@@ -1098,28 +1098,21 @@ async function generateHtml(): Promise<string> {
     <h1 class="hero-title">Beautiful Mermaid</h1>
     <p class="hero-tagline">Mermaid Rendering, made beautiful.</p>
     <p class="hero-description">
-      An open source library for rendering diagrams, designed for the age of AI: <code>beautiful-mermaid</code>.
-      Ultra-fast, fully themeable, and outputs to both SVG and ASCII.<br>
-      Built by the team at <a href="https://craft.do" target="_blank" rel="noopener">Craft</a> — because diagrams deserve great design too.
+      Vercel's fork of <a href="https://github.com/lukilabs/beautiful-mermaid" target="_blank" rel="noopener">beautiful-mermaid</a>, an open source diagram rendering library by <a href="https://craft.do" target="_blank" rel="noopener">Craft</a>.
+      Ultra-fast, fully themeable, outputs to both SVG and ASCII. Adds Vercel dark/light themes, Geist typography, and rank-by-rank animation.
     </p>
     <div class="hero-buttons">
-      <a href="https://www.npmjs.com/package/beautiful-mermaid" target="_blank" rel="noopener" class="hero-btn hero-btn-primary">
+      <a href="https://www.npmjs.com/package/@vercel/beautiful-mermaid" target="_blank" rel="noopener" class="hero-btn hero-btn-primary">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0v1.336H8.001V8.667h5.334v5.332h-2.669v-.001zm12.001 0h-1.33v-4h-1.336v4h-1.335v-4h-1.33v4h-2.671V8.667h8.002v5.331zM10.665 10H12v2.667h-1.335V10z"/></svg>
         npm install
       </a>
-      <a href="https://github.com/lukilabs/beautiful-mermaid" target="_blank" rel="noopener" class="hero-btn hero-btn-secondary">
+      <a href="https://github.com/vercel-labs/beautiful-mermaid" target="_blank" rel="noopener" class="hero-btn hero-btn-secondary">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
         GitHub
       </a>
-      <button type="button" class="hero-btn hero-btn-secondary" id="random-theme-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-        Random Theme
-      </button>
     </div>
     <div class="hero-meta">
-      <p class="meta" id="total-timing">Rendering ${samples.length * 2} samples\u2026</p>
-      <div class="meta">Samples rendered client-side in real time</div>
-      <div class="meta">Early preview — actively evolving</div>
+      <p class="meta" id="total-timing">${samples.length} diagrams \u00b7 rendering\u2026</p>
     </div>
   </header>
 
@@ -1323,25 +1316,6 @@ ${bundleJs}
     });
   }
 
-  // -- Random theme button --
-  var randomThemeBtn = document.getElementById('random-theme-btn');
-  var themeKeys = Object.keys(THEMES);
-  var currentThemeKey = localStorage.getItem('mermaid-theme') || '';
-
-  if (randomThemeBtn) {
-    randomThemeBtn.addEventListener('click', function() {
-      // Filter out the current theme so we never pick the same one
-      var availableKeys = themeKeys.filter(function(k) { return k !== currentThemeKey; });
-      // Also include default ('') if not currently selected
-      if (currentThemeKey !== '') availableKeys.push('');
-      // Pick a random theme
-      var randomIndex = Math.floor(Math.random() * availableKeys.length);
-      var newThemeKey = availableKeys[randomIndex];
-      currentThemeKey = newThemeKey;
-      applyTheme(newThemeKey);
-    });
-  }
-
   // -- Brand dropdown --
   var brandBtn = document.getElementById('brand-badge-btn');
   var brandDropdown = document.getElementById('brand-dropdown');
@@ -1531,7 +1505,7 @@ ${bundleJs}
 
   // Done — show total time
   var totalMs = (performance.now() - totalStart).toFixed(0);
-  totalTimingEl.textContent = (samples.length * 2) + ' samples (SVG+ASCII) rendered in ' + totalMs + ' ms';
+  totalTimingEl.textContent = samples.length + ' diagrams \u00b7 rendered in ' + totalMs + ' ms';
 
   function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
