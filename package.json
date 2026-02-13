@@ -1,6 +1,6 @@
 {
   "name": "@vercel/beautiful-mermaid",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "license": "MIT",
   "description": "Render Mermaid diagrams as beautiful SVGs or ASCII art. Ultra-fast, fully themeable, zero DOM dependencies.",
   "type": "module",
@@ -27,11 +27,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/lukilabs/beautiful-mermaid"
+    "url": "https://github.com/vercel-labs/beautiful-mermaid"
   },
-  "homepage": "https://github.com/lukilabs/beautiful-mermaid",
+  "homepage": "https://github.com/vercel-labs/beautiful-mermaid",
   "bugs": {
-    "url": "https://github.com/lukilabs/beautiful-mermaid/issues"
+    "url": "https://github.com/vercel-labs/beautiful-mermaid/issues"
   },
   "keywords": [
     "mermaid",
