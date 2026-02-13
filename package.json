@@ -1,5 +1,5 @@
 {
-  "name": "beautiful-mermaid",
+  "name": "@vercel/beautiful-mermaid",
   "version": "0.1.4",
   "license": "MIT",
   "description": "Render Mermaid diagrams as beautiful SVGs or ASCII art. Ultra-fast, fully themeable, zero DOM dependencies.",
