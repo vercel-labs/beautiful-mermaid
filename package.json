@@ -53,6 +53,7 @@
     "dev": "bun run dev.ts",
     "bench": "bun run bench.ts",
     "build": "tsup",
+    "prepare": "tsup",
     "build:samples": "bun run index.ts && mkdir -p samples && mv index.html samples/ && cp -r public/* samples/",
     "prepublishOnly": "npm run build"
   },
