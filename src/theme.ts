@@ -158,8 +158,8 @@ export const THEMES: Record<string, DiagramColors> = {
   },
   'vercel-light': {
     bg: '#FFFFFF', fg: '#171717',
-    line: '#EAEAEA', accent: '#000000', muted: '#888888',
-    surface: '#FAFAFA', border: '#EAEAEA',
+    line: '#48484A', accent: '#48484A', muted: '#888888',
+    surface: '#FAFAFA', border: '#d8d8d8',
   },
 } as const
 

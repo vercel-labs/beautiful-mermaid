@@ -207,7 +207,7 @@ function renderAnimatedEdge(
     const w = ARROW_HEAD.width
     const hh = ARROW_HEAD.height / 2
     parts.push(
-      `<polygon points="0 ${-hh}, ${w} 0, 0 ${hh}" fill="var(--_arrow)" opacity="0">` +
+      `<polygon points="0 ${-hh}, ${w} 0, 0 ${hh}" fill="var(--_line)" opacity="0">` +
       `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
       `rotate="auto" keyPoints="0;1" keyTimes="0;1" ` +
       `calcMode="spline" keySplines="${smilSplines}">` +
@@ -223,7 +223,7 @@ function renderAnimatedEdge(
     const w = ARROW_HEAD.width
     const hh = ARROW_HEAD.height / 2
     parts.push(
-      `<polygon points="${w} ${-hh}, 0 0, ${w} ${hh}" fill="var(--_arrow)" opacity="0">` +
+      `<polygon points="${w} ${-hh}, 0 0, ${w} ${hh}" fill="var(--_line)" opacity="0">` +
       `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
       `rotate="auto" keyPoints="1;0" keyTimes="0;1" ` +
       `calcMode="spline" keySplines="${smilSplines}">` +
@@ -252,10 +252,10 @@ function arrowMarkerDefs(): string {
   const h = ARROW_HEAD.height
   return (
     `  <marker id="arrowhead" markerWidth="${w}" markerHeight="${h}" refX="0" refY="${h / 2}" orient="auto" markerUnits="userSpaceOnUse" overflow="visible">` +
-    `\n    <polygon points="0 0, ${w} ${h / 2}, 0 ${h}" fill="var(--_arrow)" />` +
+    `\n    <polygon points="0 0, ${w} ${h / 2}, 0 ${h}" fill="var(--_line)" />` +
     `\n  </marker>` +
     `\n  <marker id="arrowhead-start" markerWidth="${w}" markerHeight="${h}" refX="${w}" refY="${h / 2}" orient="auto-start-reverse" markerUnits="userSpaceOnUse" overflow="visible">` +
-    `\n    <polygon points="${w} 0, 0 ${h / 2}, ${w} ${h}" fill="var(--_arrow)" />` +
+    `\n    <polygon points="${w} 0, 0 ${h / 2}, ${w} ${h}" fill="var(--_line)" />` +
     `\n  </marker>`
   )
 }
