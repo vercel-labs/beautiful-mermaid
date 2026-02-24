@@ -2,7 +2,7 @@
 // importing the pre-built browser bundle avoids Bun.build hanging on 30+ CJS file resolution
 import dagre from '@dagrejs/dagre/dist/dagre.js'
 import type { MermaidGraph, MermaidSubgraph, PositionedGraph, PositionedNode, PositionedEdge, PositionedGroup, Point, RenderOptions } from './types.ts'
-import { estimateTextWidth, FONT_SIZES, FONT_WEIGHTS, NODE_PADDING, GROUP_HEADER_CONTENT_PAD } from './styles.ts'
+import { estimateTextWidth, estimateMonoTextWidth, FONT_SIZES, FONT_WEIGHTS, NODE_PADDING, GROUP_HEADER_CONTENT_PAD } from './styles.ts'
 import { centerToTopLeft, snapToOrthogonal, clipToDiamondBoundary, clipToCircleBoundary, clipEndpointsToNodes, centerZBends } from './dagre-adapter.ts'
 
 /** Shapes that render as circles — need edge endpoint clipping to the circle boundary */
@@ -124,7 +124,7 @@ function preComputeSubgraphLayout(
       const edgeLabel: Record<string, unknown> = { _index: i }
       if (edge.label) {
         edgeLabel.label = edge.label
-        edgeLabel.width = estimateTextWidth(edge.label, opts.edgeFontSize, FONT_WEIGHTS.edgeLabel) + 8
+        edgeLabel.width = estimateMonoTextWidth(edge.label, opts.edgeFontSize) + 8
         edgeLabel.height = opts.edgeFontSize + 6
         edgeLabel.labelpos = 'c'
       }
@@ -362,7 +362,7 @@ export async function layoutGraph(
     const edgeLabel: Record<string, unknown> = { _index: i }
     if (edge.label) {
       edgeLabel.label = edge.label
-      edgeLabel.width = estimateTextWidth(edge.label, opts.edgeFontSize, FONT_WEIGHTS.edgeLabel) + 8
+      edgeLabel.width = estimateMonoTextWidth(edge.label, opts.edgeFontSize) + 8
       edgeLabel.height = opts.edgeFontSize + 6
       edgeLabel.labelpos = 'c'
     }
@@ -384,6 +384,81 @@ export async function layoutGraph(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(`Dagre layout failed: ${message}`)
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 3b: Center fork/join nodes between their children.
+  //
+  // Dagre doesn't guarantee symmetric placement when a node fans out to
+  // multiple targets with different-width edge labels. Build fork/join maps
+  // from original edges, center nodes, then shift connected edge waypoints.
+  // -------------------------------------------------------------------------
+  const isHorizontal = graph.direction === 'LR' || graph.direction === 'RL'
+  const forkTargets = new Map<string, Set<string>>()
+  const joinSources = new Map<string, Set<string>>()
+  for (const edge of graph.edges) {
+    if (!forkTargets.has(edge.source)) forkTargets.set(edge.source, new Set())
+    forkTargets.get(edge.source)!.add(edge.target)
+    if (!joinSources.has(edge.target)) joinSources.set(edge.target, new Set())
+    joinSources.get(edge.target)!.add(edge.source)
+  }
+
+  // Track which nodes moved and by how much
+  const nodeDeltas = new Map<string, number>()
+
+  for (const [nodeId, targets] of forkTargets) {
+    if (targets.size < 2) continue
+    const n = g.node(nodeId)
+    if (!n) continue
+    const positions = [...targets].map(id => g.node(id)).filter(Boolean)
+    if (positions.length < 2) continue
+    const min = Math.min(...positions.map(p => isHorizontal ? p.y : p.x))
+    const max = Math.max(...positions.map(p => isHorizontal ? p.y : p.x))
+    const center = (min + max) / 2
+    const old = isHorizontal ? n.y : n.x
+    if (isHorizontal) n.y = center
+    else n.x = center
+    nodeDeltas.set(nodeId, center - old)
+  }
+
+  for (const [nodeId, sources] of joinSources) {
+    if (sources.size < 2) continue
+    const n = g.node(nodeId)
+    if (!n) continue
+    const positions = [...sources].map(id => g.node(id)).filter(Boolean)
+    if (positions.length < 2) continue
+    const min = Math.min(...positions.map(p => isHorizontal ? p.y : p.x))
+    const max = Math.max(...positions.map(p => isHorizontal ? p.y : p.x))
+    const center = (min + max) / 2
+    const old = isHorizontal ? n.y : n.x
+    if (isHorizontal) n.y = center
+    else n.x = center
+    const existing = nodeDeltas.get(nodeId) ?? 0
+    nodeDeltas.set(nodeId, existing + (center - old))
+  }
+
+  // Fix fork/join edge start/end points so they originate from the node center.
+  // Dagre offsets the first point of each edge toward its target, which breaks
+  // symmetry after snapToOrthogonal. Reset the cross-axis coordinate of
+  // fork source points and join target points to the node center.
+  for (const edgeObj of g.edges()) {
+    const dagreEdge = g.edge(edgeObj)
+    const pts: Point[] = dagreEdge.points ?? []
+    if (pts.length < 2) continue
+
+    const srcNode = g.node(edgeObj.v)
+    const tgtNode = g.node(edgeObj.w)
+
+    if (srcNode && forkTargets.has(edgeObj.v) && forkTargets.get(edgeObj.v)!.size >= 2) {
+      if (isHorizontal) pts[0]!.y = srcNode.y
+      else pts[0]!.x = srcNode.x
+    }
+
+    if (tgtNode && joinSources.has(edgeObj.w) && joinSources.get(edgeObj.w)!.size >= 2) {
+      const last = pts.length - 1
+      if (isHorizontal) pts[last]!.y = tgtNode.y
+      else pts[last]!.x = tgtNode.x
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -763,18 +838,22 @@ function extractPositionedGraph(
     // Fix cross-boundary edge endpoints.
     // Edges that originally connected to internal nodes were redirected to the
     // placeholder during main layout. Now replace the endpoint with the actual
-    // composed node position and re-run orthogonal snapping.
+    // composed node position. Intermediate waypoints from the original dagre
+    // layout become orphaned after endpoint reassignment, so rebuild the path
+    // from scratch: [source, label_position?, target].
     for (const edge of edges) {
       // Skip edges that are from pre-computed layouts (already correctly routed)
       if (preComputedNodeIds.has(edge.source) && preComputedNodeIds.has(edge.target)) continue
 
       let modified = false
+      let newStart: Point | undefined
+      let newEnd: Point | undefined
 
       // Fix source endpoint — if the source is inside a pre-computed subgraph
       if (preComputedNodeIds.has(edge.source)) {
         const pos = nodePositionMap.get(edge.source)
-        if (pos && edge.points.length > 0) {
-          edge.points[0] = { x: pos.cx, y: pos.cy }
+        if (pos) {
+          newStart = { x: pos.cx, y: pos.cy }
           modified = true
         }
       }
@@ -782,15 +861,38 @@ function extractPositionedGraph(
       // Fix target endpoint — if the target is inside a pre-computed subgraph
       if (preComputedNodeIds.has(edge.target)) {
         const pos = nodePositionMap.get(edge.target)
-        if (pos && edge.points.length > 0) {
-          edge.points[edge.points.length - 1] = { x: pos.cx, y: pos.cy }
+        if (pos) {
+          newEnd = { x: pos.cx, y: pos.cy }
           modified = true
         }
       }
 
-      // Re-snap to orthogonal after modifying endpoints
-      if (modified) {
+      // Rebuild path from scratch to avoid orphaned intermediate waypoints
+      if (modified && edge.points.length > 0) {
+        const start = newStart ?? edge.points[0]!
+        const end = newEnd ?? edge.points[edge.points.length - 1]!
+        // Preserve label position as a waypoint if it exists
+        if (edge.labelPosition) {
+          edge.points = [start, { ...edge.labelPosition }, end]
+        } else {
+          edge.points = [start, end]
+        }
         edge.points = snapToOrthogonal(edge.points, verticalFirst)
+
+        // Re-clip to node boundaries
+        const srcPos = nodePositionMap.get(edge.source)
+        const tgtPos = nodePositionMap.get(edge.target)
+        const srcNode = graph.nodes.get(edge.source)
+        const tgtNode = graph.nodes.get(edge.target)
+        const srcShape = srcNode?.shape
+        const tgtShape = tgtNode?.shape
+        const srcRect = srcPos && (!srcShape || !NON_RECT_SHAPES.has(srcShape))
+          ? { cx: srcPos.cx, cy: srcPos.cy, hw: (nodes.find(n => n.id === edge.source)?.width ?? 0) / 2, hh: (nodes.find(n => n.id === edge.source)?.height ?? 0) / 2 }
+          : null
+        const tgtRect = tgtPos && (!tgtShape || !NON_RECT_SHAPES.has(tgtShape))
+          ? { cx: tgtPos.cx, cy: tgtPos.cy, hw: (nodes.find(n => n.id === edge.target)?.width ?? 0) / 2, hh: (nodes.find(n => n.id === edge.target)?.height ?? 0) / 2 }
+          : null
+        edge.points = clipEndpointsToNodes(edge.points, srcRect, tgtRect)
       }
     }
   }
@@ -853,9 +955,104 @@ function extractPositionedGraph(
     graphHeight = maxBottom + padding
   }
 
-  // Center Z-bend crossover segments at the midpoint between source and target
+  // Center Z-bend crossover segments at the midpoint between source and target.
+  // For fork/join sibling edges, use a shared midpoint so bends are symmetric.
+  const edgeForkGroups = new Map<string, PositionedEdge[]>()
+  const edgeJoinGroups = new Map<string, PositionedEdge[]>()
   for (const edge of edges) {
-    edge.points = centerZBends(edge.points, verticalFirst)
+    // Count siblings from same source / to same target
+    const srcSiblings = edges.filter(e => e.source === edge.source)
+    const tgtSiblings = edges.filter(e => e.target === edge.target)
+    if (srcSiblings.length >= 2) {
+      if (!edgeForkGroups.has(edge.source)) edgeForkGroups.set(edge.source, [])
+      edgeForkGroups.get(edge.source)!.push(edge)
+    }
+    if (tgtSiblings.length >= 2) {
+      if (!edgeJoinGroups.has(edge.target)) edgeJoinGroups.set(edge.target, [])
+      edgeJoinGroups.get(edge.target)!.push(edge)
+    }
+  }
+
+  // Track which edges are part of a fork/join group (skip individual centerZBends)
+  const forkJoinEdges = new Set<PositionedEdge>()
+  for (const group of [...edgeForkGroups.values(), ...edgeJoinGroups.values()]) {
+    for (const e of group) forkJoinEdges.add(e)
+  }
+
+  for (const edge of edges) {
+    if (!forkJoinEdges.has(edge)) {
+      edge.points = centerZBends(edge.points, verticalFirst)
+    }
+  }
+
+  // For fork groups: apply shared midpoint so the bend is symmetric
+  for (const [, group] of edgeForkGroups) {
+    if (group.length < 2) continue
+    const centered = group.map(e => centerZBends(e.points, verticalFirst))
+    // Compute the average bend position across siblings
+    if (verticalFirst) {
+      const midYs = centered.filter(pts => pts.length === 4).map(pts => pts[1]!.y)
+      if (midYs.length >= 2) {
+        const sharedMid = midYs.reduce((a, b) => a + b, 0) / midYs.length
+        for (let i = 0; i < group.length; i++) {
+          const pts = centered[i]!
+          if (pts.length === 4) {
+            pts[1] = { ...pts[1]!, y: sharedMid }
+            pts[2] = { ...pts[2]!, y: sharedMid }
+          }
+          group[i]!.points = pts
+        }
+      }
+    } else {
+      const midXs = centered.filter(pts => pts.length === 4).map(pts => pts[1]!.x)
+      if (midXs.length >= 2) {
+        const sharedMid = midXs.reduce((a, b) => a + b, 0) / midXs.length
+        for (let i = 0; i < group.length; i++) {
+          const pts = centered[i]!
+          if (pts.length === 4) {
+            pts[1] = { ...pts[1]!, x: sharedMid }
+            pts[2] = { ...pts[2]!, x: sharedMid }
+          }
+          group[i]!.points = pts
+        }
+      }
+    }
+  }
+
+  // For join groups: apply shared midpoint
+  for (const [, group] of edgeJoinGroups) {
+    if (group.length < 2) continue
+    // Only process edges not already handled by fork groups
+    const unhandled = group.filter(e => !edgeForkGroups.has(e.source) || edgeForkGroups.get(e.source)!.length < 2)
+    if (unhandled.length < 2) continue
+    const centered = unhandled.map(e => centerZBends(e.points, verticalFirst))
+    if (verticalFirst) {
+      const midYs = centered.filter(pts => pts.length === 4).map(pts => pts[1]!.y)
+      if (midYs.length >= 2) {
+        const sharedMid = midYs.reduce((a, b) => a + b, 0) / midYs.length
+        for (let i = 0; i < unhandled.length; i++) {
+          const pts = centered[i]!
+          if (pts.length === 4) {
+            pts[1] = { ...pts[1]!, y: sharedMid }
+            pts[2] = { ...pts[2]!, y: sharedMid }
+          }
+          unhandled[i]!.points = pts
+        }
+      }
+    } else {
+      const midXs = centered.filter(pts => pts.length === 4).map(pts => pts[1]!.x)
+      if (midXs.length >= 2) {
+        const sharedMid = midXs.reduce((a, b) => a + b, 0) / midXs.length
+        for (let i = 0; i < unhandled.length; i++) {
+          const pts = centered[i]!
+          if (pts.length === 4) {
+            pts[1] = { ...pts[1]!, x: sharedMid }
+            pts[2] = { ...pts[2]!, x: sharedMid }
+          }
+          unhandled[i]!.points = pts
+        }
+      }
+    }
   }
 
   // Assign rank info to edges and groups for animation sequencing
@@ -868,6 +1065,62 @@ function extractPositionedGraph(
     edge.targetRank = nodeRankMap.get(edge.target)
   }
   assignGroupRanks(groups, nodeRankMap, nodes)
+
+  // Fix short trailing/leading edge segments that create visual artifacts.
+  // These arise when dagre routes edges to compound node boundaries near
+  // the target node. The short final segment gets consumed by the rounded
+  // corner + arrow pullback, creating a gap. Fix by extending the previous
+  // segment's direction to reach the target instead.
+  const shortSegmentThreshold = 20
+  for (const edge of edges) {
+    if (edge.points.length < 4) continue
+
+    // Fix trailing: if last segment is short, extend the second-to-last
+    // segment's line to reach the target's boundary at its natural position.
+    const last = edge.points[edge.points.length - 1]!
+    const prev = edge.points[edge.points.length - 2]!
+    const segLen = Math.sqrt((last.x - prev.x) ** 2 + (last.y - prev.y) ** 2)
+
+    if (segLen < shortSegmentThreshold) {
+      // The previous segment direction should be continued to the target.
+      // Just move the last point to match the previous segment's axis.
+      const prev2 = edge.points[edge.points.length - 3]!
+      const isHorizApproach = Math.abs(prev.y - prev2.y) < 1
+      const isVertApproach = Math.abs(prev.x - prev2.x) < 1
+
+      if (isHorizApproach) {
+        // Previous segment is horizontal — extend it to target, keep natural Y
+        edge.points[edge.points.length - 1] = { x: last.x, y: prev.y }
+        // Remove the now-redundant corner point
+        edge.points.splice(edge.points.length - 2, 1)
+      } else if (isVertApproach) {
+        // Previous segment is vertical — extend it to target, keep natural X
+        edge.points[edge.points.length - 1] = { x: prev.x, y: last.y }
+        edge.points.splice(edge.points.length - 2, 1)
+      }
+    }
+
+    // Same for leading short segments
+    if (edge.points.length >= 4) {
+      const first = edge.points[0]!
+      const next = edge.points[1]!
+      const segLen2 = Math.sqrt((next.x - first.x) ** 2 + (next.y - first.y) ** 2)
+
+      if (segLen2 < shortSegmentThreshold) {
+        const next2 = edge.points[2]!
+        const isHorizExit = Math.abs(next.y - next2.y) < 1
+        const isVertExit = Math.abs(next.x - next2.x) < 1
+
+        if (isHorizExit) {
+          edge.points[0] = { x: first.x, y: next.y }
+          edge.points.splice(1, 1)
+        } else if (isVertExit) {
+          edge.points[0] = { x: next.x, y: first.y }
+          edge.points.splice(1, 1)
+        }
+      }
+    }
+  }
 
   return {
     width: graphWidth,

@@ -1,7 +1,7 @@
 import type { PositionedGraph, PositionedNode, PositionedEdge, PositionedGroup, Point, RenderOptions } from './types.ts'
 import type { DiagramColors } from './theme.ts'
 import { svgOpenTag, buildStyleBlock } from './theme.ts'
-import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, estimateTextWidth, TEXT_BASELINE_SHIFT } from './styles.ts'
+import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, estimateTextWidth, estimateMonoTextWidth, TEXT_BASELINE_SHIFT } from './styles.ts'
 import type { ResolvedAnimation, ElementDelays } from './animation.ts'
 import { computeDelays, buildAnimationCSS, cssEasingToSmil } from './animation.ts'
 
@@ -42,7 +42,7 @@ export function renderSvg(
 
   // SVG root with CSS variables + style block + defs
   parts.push(svgOpenTag(graph.width, graph.height, colors, transparent))
-  parts.push(buildStyleBlock(font, false))
+  parts.push(buildStyleBlock(font, true))
   if (anim) {
     parts.push('<style>')
     parts.push(buildAnimationCSS(anim))
@@ -108,10 +108,10 @@ export function renderSvg(
       const delay = delays?.edges.get(i)
       if (anim && delay != null) {
         parts.push(`<g class="ael" style="--d:${delay}ms">`)
-        parts.push(renderEdgeLabel(edge, font, edgeFontSize))
+        parts.push(renderEdgeLabel(edge, font, edgeFontSize, lineWidth))
         parts.push('</g>')
       } else {
-        parts.push(renderEdgeLabel(edge, font, edgeFontSize))
+        parts.push(renderEdgeLabel(edge, font, edgeFontSize, lineWidth))
       }
     }
   }
@@ -349,14 +349,29 @@ function renderEdge(edge: PositionedEdge, lineWidth: number, bendRadius: number)
   const pts = edge.points.map(p => ({ ...p }))
   if (edge.hasArrowEnd && pts.length >= 2) {
     const pullback = ARROW_HEAD.width + 2
-    const last = pts[pts.length - 1]!
-    const prev = pts[pts.length - 2]!
-    const dx = last.x - prev.x
-    const dy = last.y - prev.y
-    const d = Math.sqrt(dx * dx + dy * dy)
-    if (d > pullback) {
-      last.x -= (dx / d) * pullback
-      last.y -= (dy / d) * pullback
+
+    // Remove degenerate trailing segments (< pullback length) by merging
+    // them into the previous segment. This happens when endpoint clipping
+    // creates very short final segments at subgraph boundaries.
+    while (pts.length >= 3) {
+      const last = pts[pts.length - 1]!
+      const prev = pts[pts.length - 2]!
+      const segLen = Math.sqrt((last.x - prev.x) ** 2 + (last.y - prev.y) ** 2)
+      if (segLen >= pullback) break
+      // Merge: remove the second-to-last point, extending the previous segment to the last point
+      pts.splice(pts.length - 2, 1)
+    }
+
+    if (pts.length >= 2) {
+      const last = pts[pts.length - 1]!
+      const prev = pts[pts.length - 2]!
+      const dx = last.x - prev.x
+      const dy = last.y - prev.y
+      const d = Math.sqrt(dx * dx + dy * dy)
+      if (d > pullback) {
+        last.x -= (dx / d) * pullback
+        last.y -= (dy / d) * pullback
+      }
     }
   }
 
@@ -405,21 +420,23 @@ function roundedPolylinePath(points: Point[], radius: number): string {
   return parts.join(' ')
 }
 
-function renderEdgeLabel(edge: PositionedEdge, font: string, edgeFontSize: number): string {
+function renderEdgeLabel(edge: PositionedEdge, font: string, edgeFontSize: number, lineWidth: number): string {
   const mid = edge.labelPosition ?? edgeMidpoint(edge.points)
   const label = edge.label!
-  const textWidth = estimateTextWidth(label, edgeFontSize, FONT_WEIGHTS.edgeLabel)
-  const padding = 8
-  const bgWidth = textWidth + padding * 2
-  const bgHeight = edgeFontSize + padding * 2
+  const textWidth = estimateMonoTextWidth(label, edgeFontSize)
+  const paddingX = 12
+  const paddingY = 8
+  const bgWidth = textWidth + paddingX * 2
+  const bgHeight = edgeFontSize + paddingY * 2
+  const pillRadius = bgHeight / 2
 
   return (
     `<rect x="${mid.x - bgWidth / 2}" y="${mid.y - bgHeight / 2}" ` +
-    `width="${bgWidth}" height="${bgHeight}" rx="4" ry="4" ` +
-    `fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />\n` +
-    `<text x="${mid.x}" y="${mid.y}" text-anchor="middle" dy="${TEXT_BASELINE_SHIFT}" ` +
+    `width="${bgWidth}" height="${bgHeight}" rx="${pillRadius}" ry="${pillRadius}" ` +
+    `fill="var(--bg)" stroke="var(--_line)" stroke-width="${lineWidth}" />\n` +
+    `<text class="mono" x="${mid.x}" y="${mid.y}" text-anchor="middle" dy="${TEXT_BASELINE_SHIFT}" ` +
     `font-size="${edgeFontSize}" font-weight="${FONT_WEIGHTS.edgeLabel}" ` +
-    `fill="var(--_text-muted)">${escapeXml(label)}</text>`
+    `fill="var(--_text)">${escapeXml(label)}</text>`
   )
 }
 

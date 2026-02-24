@@ -849,6 +849,52 @@ async function generateHtml(): Promise<string> {
       font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
     }
 
+    /* -- Playground -- */
+    .playground {
+      background: var(--t-bg);
+      margin-bottom: 2rem;
+      overflow: hidden;
+    }
+    .playground-editor {
+      border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
+    }
+    #pg-input {
+      width: 100%;
+      resize: vertical;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: color-mix(in srgb, var(--t-fg) 85%, var(--t-bg));
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      padding: 1rem 1.5rem;
+      tab-size: 2;
+      min-height: 120px;
+      box-sizing: border-box;
+    }
+    #pg-input::placeholder {
+      color: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg));
+    }
+    .playground-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      min-height: 300px;
+    }
+    .playground-preview svg {
+      max-width: 100%;
+      max-height: 100%;
+      height: auto;
+    }
+    .playground-preview .render-error {
+      color: #ef4444;
+      white-space: pre-wrap;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85rem;
+    }
+
     /* -- Loading spinner -- */
     .loading-spinner {
       width: 24px;
@@ -1120,6 +1166,19 @@ async function generateHtml(): Promise<string> {
 
 ${heroCardsHtml}
 
+  <h2 class="section-title">Playground</h2>
+  <section class="playground">
+    <div class="playground-editor">
+      <textarea id="pg-input" spellcheck="false" placeholder="Enter mermaid syntax...">graph TD
+  A[Start] --> B{Decision}
+  B -->|Yes| C[OK]
+  B -->|No| D[Cancel]</textarea>
+    </div>
+    <div class="playground-preview" id="pg-svg">
+      <div class="loading-spinner"></div>
+    </div>
+  </section>
+
   <h2 class="section-title">Samples</h2>
 
 ${regularCardsHtml}
@@ -1138,6 +1197,45 @@ ${bundleJs}
   var renderMermaidAscii = window.__mermaid.renderMermaidAscii;
 
   var totalTimingEl = document.getElementById('total-timing');
+
+  // -- Playground --
+  var pgInput = document.getElementById('pg-input');
+  var pgSvg = document.getElementById('pg-svg');
+  var pgDebounce = null;
+  var pgRendering = false;
+
+  async function renderPlayground() {
+    if (pgRendering) return;
+    pgRendering = true;
+    var src = pgInput.value.trim();
+    if (!src) { pgSvg.innerHTML = ''; pgRendering = false; return; }
+    try {
+      var svg = await renderMermaid(src);
+      pgSvg.innerHTML = svg;
+      // Apply active theme if set
+      var activeTheme = localStorage.getItem('mermaid-theme');
+      if (activeTheme && THEMES[activeTheme]) {
+        var svgEl = pgSvg.querySelector('svg');
+        if (svgEl) {
+          svgEl.style.setProperty('--bg', THEMES[activeTheme].bg);
+          svgEl.style.setProperty('--fg', THEMES[activeTheme].fg);
+          var enrichment = ['line', 'accent', 'muted', 'surface', 'border'];
+          for (var k = 0; k < enrichment.length; k++) {
+            if (THEMES[activeTheme][enrichment[k]]) svgEl.style.setProperty('--' + enrichment[k], THEMES[activeTheme][enrichment[k]]);
+            else svgEl.style.removeProperty('--' + enrichment[k]);
+          }
+        }
+      }
+    } catch (err) {
+      pgSvg.innerHTML = '<div class="render-error">' + escapeHtml(String(err)) + '</div>';
+    }
+    pgRendering = false;
+  }
+
+  pgInput.addEventListener('input', function() {
+    if (pgDebounce) clearTimeout(pgDebounce);
+    pgDebounce = setTimeout(renderPlayground, 300);
+  });
 
   // -- Theme state --
   // Stores each SVG element's original inline style attribute (from initial render)
@@ -1264,7 +1362,24 @@ ${bundleJs}
       }
     }
 
-    // 4. Update active pill
+    // 4. Update playground SVG
+    var pgEl = pgSvg.querySelector('svg');
+    if (pgEl) {
+      if (theme) {
+        pgEl.style.setProperty('--bg', theme.bg);
+        pgEl.style.setProperty('--fg', theme.fg);
+        var pgEnrich = ['line', 'accent', 'muted', 'surface', 'border'];
+        for (var k = 0; k < pgEnrich.length; k++) {
+          if (theme[pgEnrich[k]]) pgEl.style.setProperty('--' + pgEnrich[k], theme[pgEnrich[k]]);
+          else pgEl.style.removeProperty('--' + pgEnrich[k]);
+        }
+      } else {
+        // Reset to default — re-render to get fresh inline styles
+        renderPlayground();
+      }
+    }
+
+    // 5. Update active pill
     var pills = document.querySelectorAll('.theme-pill');
     for (var j = 0; j < pills.length; j++) {
       var isActive = pills[j].getAttribute('data-theme') === themeKey;
@@ -1442,6 +1557,9 @@ ${bundleJs}
   // ============================================================================
   // Progressive rendering — render each diagram sequentially
   // ============================================================================
+
+  // Render playground first (appears above samples)
+  await renderPlayground();
 
   var totalStart = performance.now();
 

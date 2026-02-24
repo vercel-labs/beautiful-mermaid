@@ -24,18 +24,18 @@ export function estimateMonoTextWidth(text: string, fontSize: number): number {
   return text.length * fontSize * 0.6
 }
 
-/** Monospace font family used for code-like text (class members, types) */
-export const MONO_FONT = "'JetBrains Mono'" as const
+/** Monospace font family used for code-like text (edge labels, class members, types) */
+export const MONO_FONT = "'Geist Mono'" as const
 
 /** Full CSS fallback chain for monospace text */
-export const MONO_FONT_STACK = `${MONO_FONT}, 'SF Mono', 'Fira Code', ui-monospace, monospace` as const
+export const MONO_FONT_STACK = `${MONO_FONT}, 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace` as const
 
 /** Fixed font sizes used in the renderer (in px) */
 export const FONT_SIZES = {
   /** Node label text */
   nodeLabel: 19.2,
-  /** Edge label text */
-  edgeLabel: 10,
+  /** Edge label text (mono, smaller than node labels) */
+  edgeLabel: 15.2,
   /** Subgraph header text */
   groupHeader: 16,
 } as const
@@ -58,9 +58,9 @@ export const GROUP_HEADER_CONTENT_PAD = 8
 /** Padding inside node shapes */
 export const NODE_PADDING = {
   /** Horizontal padding inside rectangles/rounded/stadium */
-  horizontal: 24,
+  horizontal: 30,
   /** Vertical padding inside rectangles/rounded/stadium */
-  vertical: 24,
+  vertical: 18,
   /** Extra padding for diamond shapes (they need more space due to rotation) */
   diamondExtra: 24,
 } as const

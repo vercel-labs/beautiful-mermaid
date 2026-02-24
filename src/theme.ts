@@ -1,3 +1,5 @@
+import { MONO_FONT_STACK } from './styles.ts'
+
 // ============================================================================
 // Theme system — CSS custom property-based theming for mermaid SVG diagrams.
 //
@@ -246,7 +248,7 @@ export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
   const fontImports = [
     `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;500;600;700&amp;display=swap');`,
     ...(hasMonoFont
-      ? [`@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;display=swap');`]
+      ? [`@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&amp;display=swap');`]
       : []),
   ]
 
@@ -271,7 +273,7 @@ export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
     '<style>',
     `  ${fontImports.join('\n  ')}`,
     `  text { font-family: '${font}', system-ui, sans-serif; }`,
-    ...(hasMonoFont ? [`  .mono { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace; }`] : []),
+    ...(hasMonoFont ? [`  .mono { font-family: ${MONO_FONT_STACK}; }`] : []),
     `  svg {${derivedVars}`,
     `  }`,
     '</style>',

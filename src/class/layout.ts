@@ -110,7 +110,7 @@ export async function layoutClassDiagram(
     const edgeLabel: Record<string, unknown> = { _index: i }
     if (rel.label) {
       edgeLabel.label = rel.label
-      edgeLabel.width = estimateTextWidth(rel.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8
+      edgeLabel.width = estimateMonoTextWidth(rel.label, FONT_SIZES.edgeLabel) + 8
       edgeLabel.height = FONT_SIZES.edgeLabel + 6
       edgeLabel.labelpos = 'c'
     }
