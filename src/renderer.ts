@@ -1,7 +1,7 @@
 import type { PositionedGraph, PositionedNode, PositionedEdge, PositionedGroup, Point, RenderOptions } from './types.ts'
 import type { DiagramColors } from './theme.ts'
 import { svgOpenTag, buildStyleBlock } from './theme.ts'
-import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, estimateTextWidth, TEXT_BASELINE_SHIFT } from './styles.ts'
+import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, EDGE_LABEL_SPACING, estimateTextWidth, titleCaseEdgeLabel, TEXT_BASELINE_SHIFT } from './styles.ts'
 import type { ResolvedAnimation, ElementDelays } from './animation.ts'
 import { computeDelays, buildAnimationCSS, cssEasingToSmil } from './animation.ts'
 
@@ -35,8 +35,17 @@ export function renderSvg(
   const groupCornerRadius = options.groupCornerRadius ?? 3
   const groupBorderColor = options.groupBorderColor ?? '#454545'
 
+  // Final pseudostates are layout-only: their predecessor's position conveys
+  // termination, so neither the marker nor its outgoing tail is rendered.
+  const nodeShapeById = new Map(graph.nodes.map(node => [node.id, node.shape]))
+  const renderedEdges = graph.edges.filter(edge => nodeShapeById.get(edge.target) !== 'state-end')
+  const renderGraph = renderedEdges.length === graph.edges.length
+    ? graph
+    : { ...graph, edges: renderedEdges }
+
   // Compute animation delays if animated
-  const delays = anim ? computeDelays(graph, anim) : null
+  const delays = anim ? computeDelays(renderGraph, anim) : null
+  const sharedJunctions = collectSharedJunctions(renderedEdges)
 
   const parts: string[] = []
 
@@ -75,17 +84,17 @@ export function renderSvg(
   }
 
   // 2. Edges
-  for (let i = 0; i < graph.edges.length; i++) {
-    const edge = graph.edges[i]!
+  for (let i = 0; i < renderedEdges.length; i++) {
+    const edge = renderedEdges[i]!
     const delay = delays?.edges.get(i)
     if (anim && delay != null && anim.edgeAnimation === 'draw') {
-      parts.push(renderAnimatedEdge(edge, i, lineWidth, edgeBendRadius, delay, anim))
+      parts.push(renderAnimatedEdge(edge, i, lineWidth, edgeBendRadius, delay, anim, sharedJunctions))
     } else if (anim && delay != null && anim.edgeAnimation === 'fade') {
       parts.push(`<g class="an" style="--d:${delay}ms">`)
-      parts.push(renderEdge(edge, lineWidth, edgeBendRadius))
+      parts.push(renderEdge(edge, lineWidth, edgeBendRadius, sharedJunctions))
       parts.push('</g>')
     } else {
-      parts.push(renderEdge(edge, lineWidth, edgeBendRadius))
+      parts.push(renderEdge(edge, lineWidth, edgeBendRadius, sharedJunctions))
     }
   }
 
@@ -102,8 +111,8 @@ export function renderSvg(
   }
 
   // 4. Edge labels
-  for (let i = 0; i < graph.edges.length; i++) {
-    const edge = graph.edges[i]!
+  for (let i = 0; i < renderedEdges.length; i++) {
+    const edge = renderedEdges[i]!
     if (edge.label) {
       const delay = delays?.edges.get(i)
       if (anim && delay != null) {
@@ -149,6 +158,7 @@ function renderAnimatedEdge(
   bendRadius: number,
   delay: number,
   anim: ResolvedAnimation,
+  sharedJunctions: Set<string>,
 ): string {
   if (edge.points.length < 2) return ''
 
@@ -156,7 +166,7 @@ function renderAnimatedEdge(
   // Dotted edges can't use stroke-dashoffset draw animation (conflicts with dasharray)
   // Fall back to fade animation for dotted edges
   if (edge.style === 'dotted') {
-    return `<g class="an" style="--d:${delay}ms">${renderEdge(edge, lineWidth, bendRadius)}</g>`
+    return `<g class="an" style="--d:${delay}ms">${renderEdge(edge, lineWidth, bendRadius, sharedJunctions)}</g>`
   }
 
   const pts = edge.points.map(p => ({ ...p }))
@@ -178,7 +188,7 @@ function renderAnimatedEdge(
   const pathId = `e${edgeIndex}`
   let pathD: string
   if (bendRadius > 0 && pts.length > 2) {
-    pathD = roundedPolylinePath(pts, bendRadius)
+    pathD = roundedPolylinePath(pts, bendRadius, sharedJunctions)
   } else {
     pathD = pointsToPathD(pts)
   }
@@ -336,7 +346,12 @@ function renderGroupLabelsInner(
 // Edge rendering (static)
 // ============================================================================
 
-function renderEdge(edge: PositionedEdge, lineWidth: number, bendRadius: number): string {
+function renderEdge(
+  edge: PositionedEdge,
+  lineWidth: number,
+  bendRadius: number,
+  sharedJunctions: Set<string>,
+): string {
   if (edge.points.length < 2) return ''
 
   const dashArray = edge.style === 'dotted' ? ' stroke-dasharray="4 4"' : ''
@@ -361,7 +376,7 @@ function renderEdge(edge: PositionedEdge, lineWidth: number, bendRadius: number)
   }
 
   if (bendRadius > 0 && pts.length > 2) {
-    const d = roundedPolylinePath(pts, bendRadius)
+    const d = roundedPolylinePath(pts, bendRadius, sharedJunctions)
     return (
       `<path d="${d}" fill="none" stroke="var(--_line)" ` +
       `stroke-width="${strokeWidth}"${dashArray}${markers} />`
@@ -379,7 +394,11 @@ function pointsToPolylinePath(points: Point[]): string {
   return points.map(p => `${p.x},${p.y}`).join(' ')
 }
 
-function roundedPolylinePath(points: Point[], radius: number): string {
+function roundedPolylinePath(
+  points: Point[],
+  radius: number,
+  sharedJunctions: Set<string>,
+): string {
   if (points.length < 2) return ''
   if (points.length === 2) return `M${points[0]!.x},${points[0]!.y} L${points[1]!.x},${points[1]!.y}`
 
@@ -389,6 +408,10 @@ function roundedPolylinePath(points: Point[], radius: number): string {
     const prev = points[i - 1]!
     const curr = points[i]!
     const next = points[i + 1]!
+    if (sharedJunctions.has(pointKey(curr))) {
+      parts.push(`L${curr.x},${curr.y}`)
+      continue
+    }
     const dPrev = dist(prev, curr)
     const dNext = dist(curr, next)
     const r = Math.min(radius, dPrev / 2, dNext / 2)
@@ -405,18 +428,46 @@ function roundedPolylinePath(points: Point[], radius: number): string {
   return parts.join(' ')
 }
 
+/**
+ * A shared edge endpoint must land on the actual stroke of its owning trunk.
+ * Rounding that trunk's corner replaces the junction point with a curve, which
+ * leaves a visible gap between otherwise identical coordinates.
+ */
+function collectSharedJunctions(edges: PositionedEdge[]): Set<string> {
+  const endpoints = new Set<string>()
+  for (const edge of edges) {
+    const first = edge.points[0]
+    const last = edge.points[edge.points.length - 1]
+    if (first) endpoints.add(pointKey(first))
+    if (last) endpoints.add(pointKey(last))
+  }
+
+  const junctions = new Set<string>()
+  for (const edge of edges) {
+    for (let index = 1; index < edge.points.length - 1; index++) {
+      const key = pointKey(edge.points[index]!)
+      if (endpoints.has(key)) junctions.add(key)
+    }
+  }
+  return junctions
+}
+
+function pointKey(point: Point): string {
+  return `${Math.round(point.x * 1000)},${Math.round(point.y * 1000)}`
+}
+
 function renderEdgeLabel(edge: PositionedEdge, font: string, edgeFontSize: number): string {
   const mid = edge.labelPosition ?? edgeMidpoint(edge.points)
-  const label = edge.label!
+  const label = titleCaseEdgeLabel(edge.label!)
   const textWidth = estimateTextWidth(label, edgeFontSize, FONT_WEIGHTS.edgeLabel)
-  const padding = 8
-  const bgWidth = textWidth + padding * 2
-  const bgHeight = edgeFontSize + padding * 2
+  const bgWidth = textWidth + EDGE_LABEL_SPACING.paddingX * 2
+  const bgHeight = edgeFontSize + EDGE_LABEL_SPACING.paddingY * 2
+  const pillRadius = bgHeight / 2
 
   return (
     `<rect x="${mid.x - bgWidth / 2}" y="${mid.y - bgHeight / 2}" ` +
-    `width="${bgWidth}" height="${bgHeight}" rx="4" ry="4" ` +
-    `fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="0.5" />\n` +
+    `width="${bgWidth}" height="${bgHeight}" rx="${pillRadius}" ry="${pillRadius}" ` +
+    `fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />\n` +
     `<text x="${mid.x}" y="${mid.y}" text-anchor="middle" dy="${TEXT_BASELINE_SHIFT}" ` +
     `font-size="${edgeFontSize}" font-weight="${FONT_WEIGHTS.edgeLabel}" ` +
     `fill="var(--_text-muted)">${escapeXml(label)}</text>`
@@ -471,8 +522,8 @@ function renderNodeShape(node: PositionedNode, cr: number): string {
     case 'asymmetric': return renderAsymmetric(x, y, width, height, fill, stroke, sw)
     case 'trapezoid': return renderTrapezoid(x, y, width, height, fill, stroke, sw)
     case 'trapezoid-alt': return renderTrapezoidAlt(x, y, width, height, fill, stroke, sw)
-    case 'state-start': return renderStateStart(x, y, width, height)
-    case 'state-end': return renderStateEnd(x, y, width, height)
+    case 'state-start':
+    case 'state-end': return ''
     case 'rectangle':
     default: return renderRect(x, y, width, height, fill, stroke, sw, cr)
   }
@@ -563,24 +614,6 @@ function renderTrapezoidAlt(x: number, y: number, w: number, h: number, fill: st
   const inset = w * 0.15
   const points = `${x},${y} ${x + w},${y} ${x + w - inset},${y + h} ${x + inset},${y + h}`
   return `<polygon points="${points}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`
-}
-
-function renderStateStart(x: number, y: number, w: number, h: number): string {
-  const cx = x + w / 2
-  const cy = y + h / 2
-  const r = Math.min(w, h) / 2 - 2
-  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--_text)" stroke="none" />`
-}
-
-function renderStateEnd(x: number, y: number, w: number, h: number): string {
-  const cx = x + w / 2
-  const cy = y + h / 2
-  const outerR = Math.min(w, h) / 2 - 2
-  const innerR = outerR - 4
-  return (
-    `<circle cx="${cx}" cy="${cy}" r="${outerR}" fill="none" stroke="var(--_text)" stroke-width="${STROKE_WIDTHS.innerBox * 2}" />` +
-    `\n<circle cx="${cx}" cy="${cy}" r="${innerR}" fill="var(--_text)" stroke="none" />`
-  )
 }
 
 // ============================================================================

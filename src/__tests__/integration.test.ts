@@ -46,9 +46,9 @@ describe('renderMermaid – options', () => {
     expect(svg).toContain('--bg:#18181B')
   })
 
-  it('applies default light colors', async () => {
+  it('applies default Vercel dark colors', async () => {
     const svg = await renderMermaid('graph TD\n  A --> B')
-    expect(svg).toContain('--bg:#FFFFFF')
+    expect(svg).toContain('--bg:#0A0A0A')
   })
 
   it('applies custom font', async () => {
@@ -60,7 +60,7 @@ describe('renderMermaid – options', () => {
     const small = await renderMermaid('graph TD\n  A --> B', { padding: 10 })
     const large = await renderMermaid('graph TD\n  A --> B', { padding: 80 })
     const getWidth = (svg: string) => {
-      const match = svg.match(/width="(\d+)"/)
+      const match = svg.match(/^<svg[^>]* width="([\d.]+)"/)
       return match ? Number(match[1]) : 0
     }
     expect(getWidth(large)).toBeGreaterThan(getWidth(small))
@@ -94,9 +94,9 @@ describe('renderMermaid – complex diagrams', () => {
       B -.->|dotted| C
       C ==>|thick| D`)
 
-    expect(svg).toContain('>solid</text>')
-    expect(svg).toContain('>dotted</text>')
-    expect(svg).toContain('>thick</text>')
+    expect(svg).toContain('>Solid</text>')
+    expect(svg).toContain('>Dotted</text>')
+    expect(svg).toContain('>Thick</text>')
     expect(svg).toContain('stroke-dasharray="4 4"')
   })
 
@@ -141,8 +141,8 @@ describe('renderMermaid – complex diagrams', () => {
     const td = await renderMermaid('graph TD\n  A --> B --> C')
 
     const getDimensions = (svg: string) => {
-      const w = svg.match(/width="(\d+)"/)
-      const h = svg.match(/height="(\d+)"/)
+      const w = svg.match(/^<svg[^>]* width="([\d.]+)"/)
+      const h = svg.match(/^<svg[^>]* height="([\d.]+)"/)
       return { width: Number(w?.[1] ?? 0), height: Number(h?.[1] ?? 0) }
     }
 
@@ -224,8 +224,8 @@ describe('renderMermaid – Batch 2 edge features', () => {
     expect(svg).toContain('>B</text>')
     expect(svg).toContain('>C</text>')
     // Should have 2 edges (A→C and B→C)
-    const polylines = (svg.match(/<polyline/g) ?? []).length
-    expect(polylines).toBe(2)
+    const connectors = (svg.match(/stroke="var\(--_line\)"/g) ?? []).length
+    expect(connectors).toBe(2)
   })
 
   it('applies inline style overrides', async () => {
@@ -253,23 +253,19 @@ describe('renderMermaid – state diagrams', () => {
     expect(svg).toContain('>Idle</text>')
     expect(svg).toContain('>Active</text>')
     expect(svg).toContain('>Done</text>')
-    expect(svg).toContain('>start</text>')
+    expect(svg).toContain('>Start</text>')
   })
 
-  it('renders start pseudostate as filled circle', async () => {
+  it('implies the start state without a visible marker', async () => {
     const svg = await renderMermaid(`stateDiagram-v2
       [*] --> Ready`)
-    // Start pseudostate: filled circle with stroke="none"
-    expect(svg).toContain('stroke="none"')
-    expect(svg).toContain('<circle')
+    expect(svg).not.toContain('<circle')
   })
 
-  it('renders end pseudostate as bullseye', async () => {
+  it('implies the end state without a visible marker', async () => {
     const svg = await renderMermaid(`stateDiagram-v2
       Done --> [*]`)
-    // End pseudostate: two circles (outer ring + inner filled)
-    const circleCount = (svg.match(/<circle/g) ?? []).length
-    expect(circleCount).toBeGreaterThanOrEqual(2)
+    expect(svg).not.toContain('<circle')
   })
 
   it('renders composite state with inner nodes', async () => {
@@ -302,8 +298,8 @@ describe('renderMermaid – state diagrams', () => {
     expect(svg).toContain('>Idle</text>')
     expect(svg).toContain('>Complete</text>')
     expect(svg).toContain('>Processing</text>')
-    expect(svg).toContain('>submit</text>')
-    expect(svg).toContain('>done</text>')
+    expect(svg).toContain('>Submit</text>')
+    expect(svg).toContain('>Done</text>')
   })
 
   it('cycle edge labels do not overlap (Running ↔ Paused)', async () => {
@@ -318,8 +314,8 @@ describe('renderMermaid – state diagrams', () => {
       Running --> Stopped : stop
       Stopped --> [*]`)
 
-    // Extract all label pill <rect> elements (rx="2" distinguishes them from node rects)
-    const pillPattern = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" rx="2"/g
+    // Edge labels are fully rounded 30px pills.
+    const pillPattern = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="30" rx="15"/g
     const pills: { x: number; y: number; w: number; h: number; label?: string }[] = []
     let match: RegExpExecArray | null
     while ((match = pillPattern.exec(svg)) !== null) {
@@ -406,8 +402,7 @@ describe('renderMermaid – edge cases', () => {
 
     expect(svg).toContain('<svg')
     expect(svg).toContain('>Node</text>')
-    // Should have at least one edge polyline
-    expect(svg).toContain('<polyline')
+    expect(svg).toMatch(/<(?:polyline|path)\b/)
   })
 
   it('renders a self-loop with label', async () => {
@@ -415,7 +410,7 @@ describe('renderMermaid – edge cases', () => {
       A[Retry] -->|again| A`)
 
     expect(svg).toContain('>Retry</text>')
-    expect(svg).toContain('>again</text>')
+    expect(svg).toContain('>Again</text>')
   })
 
   it('renders an empty subgraph without crashing', async () => {

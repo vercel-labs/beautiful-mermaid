@@ -24,6 +24,46 @@ export function estimateMonoTextWidth(text: string, fontSize: number): number {
   return text.length * fontSize * 0.6
 }
 
+/** Format human-readable edge labels without altering their Mermaid source. */
+export function titleCaseEdgeLabel(text: string): string {
+  const matches = [...text.matchAll(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*/g)]
+  if (matches.length === 0) return text
+
+  const minorWords = new Set([
+    'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in',
+    'nor', 'of', 'on', 'or', 'per', 'the', 'to', 'via', 'vs',
+  ])
+  let cursor = 0
+  let result = ''
+
+  for (let index = 0; index < matches.length; index++) {
+    const match = matches[index]!
+    const word = match[0]
+    const start = match.index!
+    result += text.slice(cursor, start)
+
+    const hasIntentionalCase = /[A-Z]/.test(word.slice(1)) || /^[A-Z0-9]{2,}$/.test(word)
+    const previousText = text.slice(cursor, start).trimEnd()
+    const followsStrongSeparator = previousText.endsWith('/') || previousText.endsWith(':')
+    const lower = word.toLowerCase()
+    const isMinor = minorWords.has(lower) && index > 0 && index < matches.length - 1 && !followsStrongSeparator
+
+    if (hasIntentionalCase) {
+      result += word
+    } else if (isMinor) {
+      result += lower
+    } else {
+      result += word
+        .split('-')
+        .map(part => part ? part[0]!.toUpperCase() + part.slice(1).toLowerCase() : part)
+        .join('-')
+    }
+    cursor = start + word.length
+  }
+
+  return result + text.slice(cursor)
+}
+
 /** Monospace font family used for code-like text (class members, types) */
 export const MONO_FONT = "'JetBrains Mono'" as const
 
@@ -35,7 +75,7 @@ export const FONT_SIZES = {
   /** Node label text */
   nodeLabel: 19.2,
   /** Edge label text */
-  edgeLabel: 10,
+  edgeLabel: 14,
   /** Subgraph header text */
   groupHeader: 16,
 } as const
@@ -58,11 +98,26 @@ export const GROUP_HEADER_CONTENT_PAD = 8
 /** Padding inside node shapes */
 export const NODE_PADDING = {
   /** Horizontal padding inside rectangles/rounded/stadium */
-  horizontal: 24,
+  horizontal: 28,
   /** Vertical padding inside rectangles/rounded/stadium */
-  vertical: 24,
+  vertical: 18,
   /** Extra padding for diamond shapes (they need more space due to rotation) */
   diamondExtra: 24,
+} as const
+
+/**
+ * Edge-label geometry shared by layout and rendering.
+ *
+ * Dagre treats an edge label as an obstacle in the graph. The layout box must
+ * therefore include the rendered pill plus enough clearance on every side.
+ * This protects both straight connections and labels placed at bends, while
+ * keeping neighboring branches from grazing a long label.
+ */
+export const EDGE_LABEL_SPACING = {
+  paddingX: 14,
+  paddingY: 8,
+  /** Minimum visible connector on either side of the label pill. */
+  clearance: 24,
 } as const
 
 /** Stroke widths per element type (in px) */
@@ -90,4 +145,3 @@ export const ARROW_HEAD = {
   width: 7,
   height: 7,
 } as const
-

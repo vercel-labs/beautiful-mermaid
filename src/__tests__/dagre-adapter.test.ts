@@ -96,11 +96,9 @@ describe('clipEndpointsToNodes', () => {
       ]
       const result = clipEndpointsToNodes(points, null, courseNode)
 
-      // Last point: top edge (cy - hh = 216) at horizontal center (cx = 200)
-      expect(result[2]!.x).toBe(200)
-      expect(result[2]!.y).toBe(216)
-      // Bend X adjusted
-      expect(result[1]!.x).toBe(200)
+      // Collinear points are collapsed while preserving the centered ingress.
+      expect(result.at(-1)!.x).toBe(200)
+      expect(result.at(-1)!.y).toBe(216)
     })
 
     it('clips to BOTTOM at horizontal center when approaching from below', () => {
@@ -111,9 +109,9 @@ describe('clipEndpointsToNodes', () => {
       ]
       const result = clipEndpointsToNodes(points, null, courseNode)
 
-      // Last point: bottom edge (cy + hh = 284)
-      expect(result[2]!.x).toBe(200)
-      expect(result[2]!.y).toBe(284)
+      // Collinear points are collapsed while preserving the centered ingress.
+      expect(result.at(-1)!.x).toBe(200)
+      expect(result.at(-1)!.y).toBe(284)
     })
   })
 
@@ -208,10 +206,10 @@ describe('clipEndpointsToNodes', () => {
       expect(result[0]!.y).toBe(80)   // teacherNode.cy + hh
       expect(result[1]!.x).toBe(100)  // adjusted to match
 
-      // Target: horizontal approach from left → left side at vertical center
-      expect(result[4]!.x).toBe(140)  // courseNode.cx - hw
-      expect(result[4]!.y).toBe(250)  // courseNode.cy
-      expect(result[3]!.y).toBe(250)  // adjusted to match
+      // The prior vertical run already reaches the target boundary, so the
+      // tiny horizontal reversal is removed.
+      expect(result.at(-1)!.x).toBe(150)
+      expect(result.at(-1)!.y).toBe(216)
     })
   })
 
@@ -307,14 +305,10 @@ describe('snapToOrthogonal + clipEndpointsToNodes pipeline', () => {
     expect(result[0]!.x).toBe(teacherNode.cx)
     expect(result[0]!.y).toBe(teacherNode.cy + teacherNode.hh)
 
-    // Target should connect to a side at vertical center of Course
+    // Target keeps the natural top ingress and removes the tiny terminal bend.
     const lastPt = result[result.length - 1]!
-    expect(lastPt.y).toBe(courseNode.cy)
-    // Should be on left or right boundary
-    expect(
-      lastPt.x === courseNode.cx - courseNode.hw ||
-      lastPt.x === courseNode.cx + courseNode.hw
-    ).toBe(true)
+    expect(lastPt.x).toBe(150)
+    expect(lastPt.y).toBe(courseNode.cy - courseNode.hh)
   })
 
   it('produces correct path for LR layout', () => {

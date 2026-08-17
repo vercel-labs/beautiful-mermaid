@@ -2,14 +2,14 @@
 // importing the pre-built browser bundle avoids Bun.build hanging on 30+ CJS file resolution
 import dagre from '@dagrejs/dagre/dist/dagre.js'
 import type { MermaidGraph, MermaidSubgraph, PositionedGraph, PositionedNode, PositionedEdge, PositionedGroup, Point, RenderOptions } from './types.ts'
-import { estimateTextWidth, FONT_SIZES, FONT_WEIGHTS, NODE_PADDING, GROUP_HEADER_CONTENT_PAD } from './styles.ts'
+import { estimateTextWidth, titleCaseEdgeLabel, FONT_SIZES, FONT_WEIGHTS, NODE_PADDING, GROUP_HEADER_CONTENT_PAD, EDGE_LABEL_SPACING, ARROW_HEAD } from './styles.ts'
 import { centerToTopLeft, snapToOrthogonal, clipToDiamondBoundary, clipToCircleBoundary, clipEndpointsToNodes, centerZBends } from './dagre-adapter.ts'
 
 /** Shapes that render as circles — need edge endpoint clipping to the circle boundary */
-const CIRCULAR_SHAPES = new Set(['circle', 'doublecircle', 'state-start', 'state-end'])
+const CIRCULAR_SHAPES = new Set(['circle', 'doublecircle'])
 
-/** Non-rectangular shapes — skip rectangular endpoint clipping for these (they use
- *  their own boundary equations via clipToDiamondBoundary / clipToCircleBoundary) */
+/** Non-rectangular shapes — skip rectangular endpoint clipping for these because
+ * they use their own diamond, circle, or triangle boundary equation. */
 const NON_RECT_SHAPES = new Set(['diamond', 'circle', 'doublecircle', 'state-start', 'state-end'])
 
 // ============================================================================
@@ -73,6 +73,30 @@ interface PreComputedSubgraph {
 }
 
 /**
+ * Size Dagre should reserve for an edge label.
+ *
+ * The rendered pill occupies the text plus padding. An invisible clearance
+ * envelope guarantees breathing room around straight connections, bends, and
+ * neighboring branches without using Dagre's coarse, rank-based `minlen`.
+ */
+function estimateEdgeLabelLayoutSize(
+  label: string,
+  fontSize: number,
+): { width: number; height: number } {
+  const displayLabel = titleCaseEdgeLabel(label)
+  const renderedWidth =
+    estimateTextWidth(displayLabel, fontSize, FONT_WEIGHTS.edgeLabel) +
+    EDGE_LABEL_SPACING.paddingX * 2
+  const renderedHeight = fontSize + EDGE_LABEL_SPACING.paddingY * 2
+  const clearance = EDGE_LABEL_SPACING.clearance * 2
+
+  return {
+    width: renderedWidth + clearance,
+    height: renderedHeight + clearance,
+  }
+}
+
+/**
  * Pre-compute the internal layout of a subgraph that has a direction override.
  *
  * Runs a separate dagre layout using the subgraph's direction as rankdir,
@@ -123,9 +147,10 @@ function preComputeSubgraphLayout(
       internalEdgeIndices.add(i)
       const edgeLabel: Record<string, unknown> = { _index: i }
       if (edge.label) {
+        const size = estimateEdgeLabelLayoutSize(edge.label, opts.edgeFontSize)
         edgeLabel.label = edge.label
-        edgeLabel.width = estimateTextWidth(edge.label, opts.edgeFontSize, FONT_WEIGHTS.edgeLabel) + 8
-        edgeLabel.height = opts.edgeFontSize + 6
+        edgeLabel.width = size.width
+        edgeLabel.height = size.height
         edgeLabel.labelpos = 'c'
       }
       subG.setEdge(edge.source, edge.target, edgeLabel)
@@ -361,9 +386,10 @@ export async function layoutGraph(
     const target = subgraphEntryNode.get(edge.target) ?? edge.target
     const edgeLabel: Record<string, unknown> = { _index: i }
     if (edge.label) {
+      const size = estimateEdgeLabelLayoutSize(edge.label, opts.edgeFontSize)
       edgeLabel.label = edge.label
-      edgeLabel.width = estimateTextWidth(edge.label, opts.edgeFontSize, FONT_WEIGHTS.edgeLabel) + 8
-      edgeLabel.height = opts.edgeFontSize + 6
+      edgeLabel.width = size.width
+      edgeLabel.height = size.height
       edgeLabel.labelpos = 'c'
     }
 
@@ -389,7 +415,15 @@ export async function layoutGraph(
   // -------------------------------------------------------------------------
   // Phase 4: Extract positions and compose pre-computed layouts.
   // -------------------------------------------------------------------------
-  return extractPositionedGraph(g, graph, opts.padding, preComputed, opts.groupPaddingX, opts.groupPaddingY)
+  return extractPositionedGraph(
+    g,
+    graph,
+    opts.padding,
+    preComputed,
+    opts.groupPaddingX,
+    opts.groupPaddingY,
+    opts.edgeFontSize,
+  )
 }
 
 // ============================================================================
@@ -464,10 +498,9 @@ function estimateNodeSize(
     height += 14
   }
 
-  // State diagram pseudostates — small fixed-size circles
+  // State pseudostates are semantic layout anchors, not visible nodes.
   if (shape === 'state-start' || shape === 'state-end') {
-    width = 28
-    height = 28
+    return { width: 1, height: 1 }
   }
 
   // Minimum sizes for aesthetics
@@ -592,6 +625,7 @@ function extractPositionedGraph(
   preComputed?: Map<string, PreComputedSubgraph>,
   groupPaddingX = 16,
   groupPaddingY = 12,
+  edgeFontSize = FONT_SIZES.edgeLabel,
 ): PositionedGraph {
   const nodes: PositionedNode[] = []
   const groups: PositionedGroup[] = []
@@ -843,6 +877,10 @@ function extractPositionedGraph(
     graphHeight += dy
   }
 
+  // With explicit final markers hidden, place their predecessor on the final
+  // rank so terminal states remain visibly lower than sibling leaf states.
+  promoteImplicitTerminalNodes(nodes, edges, graph.direction)
+
   // Also expand graph height if any group extends beyond the original bottom margin
   const maxBottom = Math.max(
     ...nodes.map(n => n.y + n.height),
@@ -851,11 +889,6 @@ function extractPositionedGraph(
   )
   if (maxBottom + padding > graphHeight) {
     graphHeight = maxBottom + padding
-  }
-
-  // Center Z-bend crossover segments at the midpoint between source and target
-  for (const edge of edges) {
-    edge.points = centerZBends(edge.points, verticalFirst)
   }
 
   // Assign rank info to edges and groups for animation sequencing
@@ -867,6 +900,39 @@ function extractPositionedGraph(
     edge.sourceRank = nodeRankMap.get(edge.source)
     edge.targetRank = nodeRankMap.get(edge.target)
   }
+
+  // Straight, one-to-one spine transitions should align their nodes instead
+  // of paying for a corrective bend near the destination.
+  alignLinearSpineNodes(edges, nodes, graph.direction)
+
+  // Center ordinary Z-bends, then move feedback and node-crossing edges onto
+  // exterior lanes so connectors cannot create false junctions through nodes.
+  for (const edge of edges) {
+    edge.points = centerZBends(edge.points, verticalFirst)
+  }
+  routeExteriorEdges(edges, nodes, graph.direction)
+  mergeSharedEdgePorts(edges, nodes, graph.direction)
+  centerSingleIncomingTargets(edges, nodes, graph.direction)
+  positionEdgeLabels(edges, edgeFontSize)
+
+  // Shared trunks and exterior lanes are post-layout geometry. Refit the
+  // canvas after routing so labels and connectors retain the outer padding.
+  const routedBounds = fitRoutedContentToCanvas(
+    nodes,
+    edges,
+    flatGroups,
+    padding,
+    edgeFontSize,
+  )
+  graphWidth += routedBounds.shiftX
+  graphHeight += routedBounds.shiftY
+
+  // Exterior lanes can extend beyond Dagre's original bounds.
+  const maxEdgeX = Math.max(0, ...edges.flatMap(edge => edge.points.map(point => point.x)))
+  const maxEdgeY = Math.max(0, ...edges.flatMap(edge => edge.points.map(point => point.y)))
+  graphWidth = Math.max(graphWidth, maxEdgeX + padding, routedBounds.maxX + padding)
+  graphHeight = Math.max(graphHeight, maxEdgeY + padding, routedBounds.maxY + padding)
+
   assignGroupRanks(groups, nodeRankMap, nodes)
 
   return {
@@ -875,6 +941,810 @@ function extractPositionedGraph(
     nodes,
     edges,
     groups,
+  }
+}
+
+const SHARED_EDGE_STEM = 24
+const MAX_SHARED_EDGE_STEM = 96
+const ARROW_PULLBACK = ARROW_HEAD.width + 2
+
+function promoteImplicitTerminalNodes(
+  nodes: PositionedNode[],
+  edges: PositionedEdge[],
+  direction: MermaidGraph['direction'],
+): void {
+  const verticalFlow = direction === 'TD' || direction === 'TB' || direction === 'BT'
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const finalNodeIds = new Set(
+    nodes.filter(node => node.shape === 'state-end').map(node => node.id),
+  )
+  const moved = new Set<string>()
+
+  for (const terminalEdge of edges) {
+    if (!finalNodeIds.has(terminalEdge.target) || moved.has(terminalEdge.source)) continue
+    const source = nodeById.get(terminalEdge.source)
+    const terminal = nodeById.get(terminalEdge.target)
+    if (!source || !terminal) continue
+
+    const sourceCenter = verticalFlow
+      ? source.y + source.height / 2
+      : source.x + source.width / 2
+    const terminalCenter = verticalFlow
+      ? terminal.y + terminal.height / 2
+      : terminal.x + terminal.width / 2
+    const delta = terminalCenter - sourceCenter
+    if (Math.abs(delta) < 1) continue
+
+    if (verticalFlow) source.y += delta
+    else source.x += delta
+    source.rank = terminal.rank
+    moved.add(source.id)
+
+    for (const edge of edges) {
+      if (edge.target === source.id && edge.points.length > 0) {
+        const endpoint = edge.points[edge.points.length - 1]!
+        if (verticalFlow) endpoint.y += delta
+        else endpoint.x += delta
+      }
+      if (edge.source === source.id && edge.points.length > 0) {
+        const endpoint = edge.points[0]!
+        if (verticalFlow) endpoint.y += delta
+        else endpoint.x += delta
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    edge.points = snapToOrthogonal(edge.points, verticalFlow)
+  }
+}
+
+/**
+ * Align uncomplicated spine nodes on the flow axis.
+ *
+ * Moving a node a short distance is visually cheaper than adding a dogleg to
+ * an otherwise straight transition. Only unlabeled, forward, one-to-one edges
+ * qualify; branching, merging, feedback, and collision cases keep Dagre's
+ * placement.
+ */
+function alignLinearSpineNodes(
+  edges: PositionedEdge[],
+  nodes: PositionedNode[],
+  direction: MermaidGraph['direction'],
+): void {
+  const verticalFlow = direction === 'TD' || direction === 'TB' || direction === 'BT'
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const incomingCount = new Map<string, number>()
+  const outgoingCount = new Map<string, number>()
+
+  for (const edge of edges) {
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1)
+    outgoingCount.set(edge.source, (outgoingCount.get(edge.source) ?? 0) + 1)
+  }
+
+  const candidates = edges
+    .filter(edge =>
+      !edge.label &&
+      (incomingCount.get(edge.target) ?? 0) === 1 &&
+      (outgoingCount.get(edge.source) ?? 0) === 1 &&
+      !(edge.sourceRank != null && edge.targetRank != null && edge.sourceRank > edge.targetRank)
+    )
+    .sort((a, b) => (a.targetRank ?? 0) - (b.targetRank ?? 0))
+
+  for (const edge of candidates) {
+    const source = nodeById.get(edge.source)
+    const target = nodeById.get(edge.target)
+    if (!source || !target) continue
+
+    const delta = verticalFlow
+      ? source.x + source.width / 2 - (target.x + target.width / 2)
+      : source.y + source.height / 2 - (target.y + target.height / 2)
+    if (Math.abs(delta) < 1 || Math.abs(delta) > 64) continue
+
+    const nextX = verticalFlow ? target.x + delta : target.x
+    const nextY = verticalFlow ? target.y : target.y + delta
+    if (nodeWouldOverlap(target, nextX, nextY, nodes)) continue
+
+    if (verticalFlow) target.x = nextX
+    else target.y = nextY
+
+    // Keep attached endpoints with the moved node. The routing passes below
+    // normalize any affected intermediate segment.
+    for (const attached of edges) {
+      if (attached.target === target.id && attached.points.length > 0) {
+        const last = attached.points.length - 1
+        if (verticalFlow) attached.points[last]!.x += delta
+        else attached.points[last]!.y += delta
+      }
+      if (attached.source === target.id && attached.points.length > 0) {
+        if (verticalFlow) attached.points[0]!.x += delta
+        else attached.points[0]!.y += delta
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    edge.points = snapToOrthogonal(edge.points, verticalFlow)
+  }
+}
+
+function nodeWouldOverlap(
+  target: PositionedNode,
+  nextX: number,
+  nextY: number,
+  nodes: PositionedNode[],
+): boolean {
+  const gap = 16
+  const left = nextX - gap
+  const right = nextX + target.width + gap
+  const top = nextY - gap
+  const bottom = nextY + target.height + gap
+
+  return nodes.some(node =>
+    node.id !== target.id &&
+    right > node.x &&
+    left < node.x + node.width &&
+    bottom > node.y &&
+    top < node.y + node.height
+  )
+}
+
+/**
+ * Collapse compatible fan-outs and fan-ins into shared orthogonal trunks.
+ *
+ * Each shared segment is owned by one representative edge. Other branches
+ * begin/end at the split or join, preventing overlapping paths from painting
+ * over the single terminal arrowhead.
+ */
+function mergeSharedEdgePorts(
+  edges: PositionedEdge[],
+  nodes: PositionedNode[],
+  direction: MermaidGraph['direction'],
+): void {
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const verticalFlow = direction === 'TD' || direction === 'TB' || direction === 'BT'
+  const reverseFlow = direction === 'BT' || direction === 'RL'
+  const flowSign = reverseFlow ? -1 : 1
+
+  const outgoing = groupCompatibleEdges(edges, 'source')
+  for (const group of outgoing.values()) {
+    if (group.length < 2) continue
+    const node = nodeById.get(group[0]!.source)
+    if (!node) continue
+
+    const port = verticalFlow
+      ? {
+          x: node.x + node.width / 2,
+          y: flowSign > 0 ? node.y + node.height : node.y,
+        }
+      : {
+          x: flowSign > 0 ? node.x + node.width : node.x,
+          y: node.y + node.height / 2,
+        }
+    const split = verticalFlow
+      ? { x: port.x, y: port.y + flowSign * SHARED_EDGE_STEM }
+      : { x: port.x + flowSign * SHARED_EDGE_STEM, y: port.y }
+    const owner = chooseSharedSegmentOwner(group)
+
+    for (const edge of group) {
+      const branch = replaceEdgeStartWithJoin(edge.points, split, verticalFlow)
+      edge.points = edge === owner
+        ? normalizeOrthogonalPoints([port, split, ...branch.slice(1)])
+        : branch
+    }
+  }
+
+  const incoming = groupCompatibleEdges(edges, 'target')
+  for (const group of incoming.values()) {
+    if (group.length < 2) continue
+    const node = nodeById.get(group[0]!.target)
+    if (!node) continue
+
+    const port = verticalFlow
+      ? {
+          x: node.x + node.width / 2,
+          y: flowSign > 0 ? node.y : node.y + node.height,
+        }
+      : {
+          x: flowSign > 0 ? node.x : node.x + node.width,
+          y: node.y + node.height / 2,
+        }
+    const owner = chooseSharedSegmentOwner(group)
+    const defaultJoin = getOpticallyCenteredIncomingJoin(
+      nodeById.get(owner.source),
+      port,
+      verticalFlow,
+      flowSign,
+    )
+    const join = chooseIncomingJoin(
+      group,
+      port,
+      defaultJoin,
+      verticalFlow,
+      flowSign,
+    )
+
+    for (const edge of group) {
+      const branch = replaceEdgeEndWithJoin(edge.points, join, verticalFlow)
+      if (edge === owner) {
+        edge.points = normalizeOrthogonalPoints([...branch, port])
+      } else {
+        edge.points = branch
+        edge.hasArrowEnd = false
+      }
+    }
+  }
+}
+
+/**
+ * Center a fan-in junction in the visible gap between the owning source and
+ * target. The terminal arrow pulls the final segment back, so its visible end
+ * — not the target boundary — defines the optical midpoint.
+ */
+function getOpticallyCenteredIncomingJoin(
+  source: PositionedNode | undefined,
+  port: Point,
+  verticalFlow: boolean,
+  flowSign: number,
+): Point {
+  const fallbackStem = SHARED_EDGE_STEM + ARROW_PULLBACK / 2
+  if (!source) {
+    return verticalFlow
+      ? { x: port.x, y: port.y - flowSign * fallbackStem }
+      : { x: port.x - flowSign * fallbackStem, y: port.y }
+  }
+
+  const sourceBoundary = verticalFlow
+    ? (flowSign > 0 ? source.y + source.height : source.y)
+    : (flowSign > 0 ? source.x + source.width : source.x)
+  const portCoordinate = verticalFlow ? port.y : port.x
+  const availableGap = (portCoordinate - sourceBoundary) * flowSign
+  const centeredStem = availableGap > 0
+    ? (availableGap + ARROW_PULLBACK) / 2
+    : fallbackStem
+  const stem = Math.max(SHARED_EDGE_STEM, Math.min(MAX_SHARED_EDGE_STEM, centeredStem))
+
+  return verticalFlow
+    ? { x: port.x, y: port.y - flowSign * stem }
+    : { x: port.x - flowSign * stem, y: port.y }
+}
+
+/**
+ * Reuse a nearby branch lane for the fan-in bus when possible.
+ *
+ * A fixed bus offset can introduce a needless down-up dogleg when one branch
+ * already runs across the target at a clean height. Snapping the join to that
+ * lane removes bends while retaining a sufficiently long final ingress stem.
+ */
+function chooseIncomingJoin(
+  edges: PositionedEdge[],
+  port: Point,
+  fallback: Point,
+  verticalFlow: boolean,
+  flowSign: number,
+): Point {
+  const candidates: number[] = []
+
+  for (const edge of edges) {
+    for (let index = 1; index < edge.points.length; index++) {
+      const start = edge.points[index - 1]!
+      const end = edge.points[index]!
+      const isCrossFlowSegment = verticalFlow
+        ? Math.abs(start.y - end.y) < 1 && Math.abs(start.x - end.x) >= 1
+        : Math.abs(start.x - end.x) < 1 && Math.abs(start.y - end.y) >= 1
+      if (!isCrossFlowSegment) continue
+
+      const coordinate = verticalFlow ? start.y : start.x
+      const stemLength = verticalFlow
+        ? (port.y - coordinate) * flowSign
+        : (port.x - coordinate) * flowSign
+      if (stemLength >= SHARED_EDGE_STEM && stemLength <= MAX_SHARED_EDGE_STEM) {
+        candidates.push(coordinate)
+      }
+    }
+  }
+
+  if (candidates.length === 0) return fallback
+  const closest = candidates.sort((a, b) => {
+    const distanceA = verticalFlow ? Math.abs(port.y - a) : Math.abs(port.x - a)
+    const distanceB = verticalFlow ? Math.abs(port.y - b) : Math.abs(port.x - b)
+    return distanceA - distanceB
+  })[0]!
+
+  return verticalFlow
+    ? { x: port.x, y: closest }
+    : { x: closest, y: port.y }
+}
+
+/**
+ * A lone forward transition should meet the center of its target's ingress
+ * side. Reuse an existing bend when possible so centering does not increase
+ * the path's bend count.
+ */
+function centerSingleIncomingTargets(
+  edges: PositionedEdge[],
+  nodes: PositionedNode[],
+  direction: MermaidGraph['direction'],
+): void {
+  const verticalFlow = direction === 'TD' || direction === 'TB' || direction === 'BT'
+  const reverseFlow = direction === 'BT' || direction === 'RL'
+  const flowSign = reverseFlow ? -1 : 1
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const incomingCount = new Map<string, number>()
+
+  for (const edge of edges) {
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1)
+  }
+
+  for (const edge of edges) {
+    if (
+      !edge.hasArrowEnd ||
+      (incomingCount.get(edge.target) ?? 0) !== 1 ||
+      (edge.sourceRank != null && edge.targetRank != null && edge.sourceRank > edge.targetRank)
+    ) continue
+
+    const target = nodeById.get(edge.target)
+    if (!target) continue
+    const port = verticalFlow
+      ? {
+          x: target.x + target.width / 2,
+          y: flowSign > 0 ? target.y : target.y + target.height,
+        }
+      : {
+          x: flowSign > 0 ? target.x : target.x + target.width,
+          y: target.y + target.height / 2,
+        }
+    edge.points = routeToCenteredIngress(edge.points, port, verticalFlow, flowSign)
+  }
+}
+
+function routeToCenteredIngress(
+  points: Point[],
+  port: Point,
+  verticalFlow: boolean,
+  flowSign: number,
+): Point[] {
+  if (points.length < 2) return points
+  const routed = points.map(point => ({ ...point }))
+  const last = routed.length - 1
+  const previous = routed[last - 1]!
+  const beforePrevious = routed[last - 2]
+
+  if (verticalFlow) {
+    if (Math.abs(previous.x - port.x) < 1) {
+      routed[last] = port
+    } else if (beforePrevious && Math.abs(beforePrevious.y - previous.y) < 1) {
+      // Slide the existing terminal vertical run to the node center. This
+      // preserves the bend count and only changes the preceding run's length.
+      routed[last - 1] = { x: port.x, y: previous.y }
+      routed[last] = port
+    } else {
+      const approachY = port.y - flowSign * SHARED_EDGE_STEM
+      routed.splice(last, 1,
+        { x: previous.x, y: approachY },
+        { x: port.x, y: approachY },
+        port,
+      )
+    }
+  } else if (Math.abs(previous.y - port.y) < 1) {
+    routed[last] = port
+  } else if (beforePrevious && Math.abs(beforePrevious.x - previous.x) < 1) {
+    routed[last - 1] = { x: previous.x, y: port.y }
+    routed[last] = port
+  } else {
+    const approachX = port.x - flowSign * SHARED_EDGE_STEM
+    routed.splice(last, 1,
+      { x: approachX, y: previous.y },
+      { x: approachX, y: port.y },
+      port,
+    )
+  }
+
+  return normalizeOrthogonalPoints(routed)
+}
+
+/** Group edges only when their visual semantics can share a connector. */
+function groupCompatibleEdges(
+  edges: PositionedEdge[],
+  endpoint: 'source' | 'target',
+): Map<string, PositionedEdge[]> {
+  const groups = new Map<string, PositionedEdge[]>()
+
+  for (const edge of edges) {
+    if (edge.points.length < 2 || edge.source === edge.target) continue
+    if (endpoint === 'source' && edge.hasArrowStart) continue
+    if (endpoint === 'target' && (!edge.hasArrowEnd || edge.hasArrowStart)) continue
+
+    const nodeId = endpoint === 'source' ? edge.source : edge.target
+    const key = `${nodeId}:${edge.style}:${edge.hasArrowStart}:${edge.hasArrowEnd}`
+    const group = groups.get(key) ?? []
+    group.push(edge)
+    groups.set(key, group)
+  }
+
+  return groups
+}
+
+/** Prefer a forward, short edge to own a shared trunk and its arrowhead. */
+function chooseSharedSegmentOwner(edges: PositionedEdge[]): PositionedEdge {
+  return [...edges].sort((a, b) => {
+    const aFeedback = a.sourceRank != null && a.targetRank != null && a.sourceRank > a.targetRank
+    const bFeedback = b.sourceRank != null && b.targetRank != null && b.sourceRank > b.targetRank
+    if (aFeedback !== bFeedback) return aFeedback ? 1 : -1
+    return polylineLength(a.points) - polylineLength(b.points)
+  })[0]!
+}
+
+function replaceEdgeStartWithJoin(
+  points: Point[],
+  split: Point,
+  verticalFlow: boolean,
+): Point[] {
+  const anchor = points[1] ?? points[0] ?? split
+  const connector = snapToOrthogonal([split, anchor], !verticalFlow)
+  return normalizeOrthogonalPoints([...connector, ...points.slice(2)])
+}
+
+function replaceEdgeEndWithJoin(
+  points: Point[],
+  join: Point,
+  verticalFlow: boolean,
+): Point[] {
+  // If the chosen bus coincides with an existing branch lane, trim the old
+  // tail at that lane instead of preserving a redundant out-and-back dogleg.
+  for (let index = points.length - 2; index >= 0; index--) {
+    const point = points[index]!
+    const aligned = verticalFlow
+      ? Math.abs(point.y - join.y) < 1
+      : Math.abs(point.x - join.x) < 1
+    if (!aligned) continue
+    const connector = snapToOrthogonal([point, join], verticalFlow)
+    return normalizeOrthogonalPoints([
+      ...points.slice(0, index + 1),
+      ...connector.slice(1),
+    ])
+  }
+
+  const anchor = points[points.length - 2] ?? points[0] ?? join
+  const connector = snapToOrthogonal([anchor, join], verticalFlow)
+  return normalizeOrthogonalPoints([...points.slice(0, -2), ...connector])
+}
+
+function normalizeOrthogonalPoints(points: Point[]): Point[] {
+  const deduped: Point[] = []
+  for (const point of points) {
+    const previous = deduped[deduped.length - 1]
+    if (previous && Math.abs(previous.x - point.x) < 1 && Math.abs(previous.y - point.y) < 1) continue
+    deduped.push({ ...point })
+  }
+
+  if (deduped.length < 3) return deduped
+  const normalized: Point[] = [deduped[0]!]
+  for (let index = 1; index < deduped.length - 1; index++) {
+    const previous = normalized[normalized.length - 1]!
+    const point = deduped[index]!
+    const next = deduped[index + 1]!
+    const sameX = Math.abs(previous.x - point.x) < 1 && Math.abs(point.x - next.x) < 1
+    const sameY = Math.abs(previous.y - point.y) < 1 && Math.abs(point.y - next.y) < 1
+    if (!sameX && !sameY) normalized.push(point)
+  }
+  normalized.push(deduped[deduped.length - 1]!)
+  return normalized
+}
+
+/** Place labels on the longest straight run that satisfies their clearance. */
+function positionEdgeLabels(edges: PositionedEdge[], edgeFontSize: number): void {
+  for (const edge of edges) {
+    if (!edge.label || edge.points.length < 2) continue
+    const displayLabel = titleCaseEdgeLabel(edge.label)
+    const width =
+      estimateTextWidth(displayLabel, edgeFontSize, FONT_WEIGHTS.edgeLabel) +
+      EDGE_LABEL_SPACING.paddingX * 2
+    const height = edgeFontSize + EDGE_LABEL_SPACING.paddingY * 2
+    let best: { start: Point; end: Point; score: number } | undefined
+    let fallback: { start: Point; end: Point; score: number } | undefined
+
+    for (let index = 1; index < edge.points.length; index++) {
+      const start = edge.points[index - 1]!
+      const end = edge.points[index]!
+      const horizontal = Math.abs(start.y - end.y) < 1
+      const vertical = Math.abs(start.x - end.x) < 1
+      if (!horizontal && !vertical) continue
+      const length = Math.abs(horizontal ? end.x - start.x : end.y - start.y)
+      const required =
+        (horizontal ? width : height) + EDGE_LABEL_SPACING.clearance * 2
+      const candidate = { start, end, score: length - required }
+      if (!fallback || length > fallback.score) {
+        fallback = { start, end, score: length }
+      }
+      if (candidate.score >= 0 && (!best || candidate.score > best.score)) {
+        best = candidate
+      }
+    }
+
+    const segment = best ?? fallback
+    if (segment) {
+      edge.labelPosition = {
+        x: (segment.start.x + segment.end.x) / 2,
+        y: (segment.start.y + segment.end.y) / 2,
+      }
+    }
+  }
+}
+
+function polylineLength(points: Point[]): number {
+  let length = 0
+  for (let index = 1; index < points.length; index++) {
+    length += Math.abs(points[index]!.x - points[index - 1]!.x) +
+      Math.abs(points[index]!.y - points[index - 1]!.y)
+  }
+  return length
+}
+
+/** Keep routed connectors and label pills inside the requested canvas padding. */
+function fitRoutedContentToCanvas(
+  nodes: PositionedNode[],
+  edges: PositionedEdge[],
+  groups: PositionedGroup[],
+  padding: number,
+  edgeFontSize: number,
+): { shiftX: number; shiftY: number; maxX: number; maxY: number } {
+  const xs: number[] = []
+  const ys: number[] = []
+
+  for (const node of nodes) {
+    xs.push(node.x, node.x + node.width)
+    ys.push(node.y, node.y + node.height)
+  }
+  for (const group of groups) {
+    xs.push(group.x, group.x + group.width)
+    ys.push(group.y, group.y + group.height)
+  }
+  for (const edge of edges) {
+    for (const point of edge.points) {
+      xs.push(point.x)
+      ys.push(point.y)
+    }
+    if (edge.label && edge.labelPosition) {
+      const displayLabel = titleCaseEdgeLabel(edge.label)
+      const labelWidth =
+        estimateTextWidth(displayLabel, edgeFontSize, FONT_WEIGHTS.edgeLabel) +
+        EDGE_LABEL_SPACING.paddingX * 2
+      const labelHeight = edgeFontSize + EDGE_LABEL_SPACING.paddingY * 2
+      xs.push(edge.labelPosition.x - labelWidth / 2, edge.labelPosition.x + labelWidth / 2)
+      ys.push(edge.labelPosition.y - labelHeight / 2, edge.labelPosition.y + labelHeight / 2)
+    }
+  }
+
+  const minX = xs.length > 0 ? Math.min(...xs) : padding
+  const minY = ys.length > 0 ? Math.min(...ys) : padding
+  const shiftX = Math.max(0, padding - minX)
+  const shiftY = Math.max(0, padding - minY)
+
+  if (shiftX > 0 || shiftY > 0) {
+    for (const node of nodes) {
+      node.x += shiftX
+      node.y += shiftY
+    }
+    for (const edge of edges) {
+      for (const point of edge.points) {
+        point.x += shiftX
+        point.y += shiftY
+      }
+      if (edge.labelPosition) {
+        edge.labelPosition.x += shiftX
+        edge.labelPosition.y += shiftY
+      }
+    }
+    for (const group of groups) {
+      group.x += shiftX
+      group.y += shiftY
+    }
+  }
+
+  return {
+    shiftX,
+    shiftY,
+    maxX: (xs.length > 0 ? Math.max(...xs) : 0) + shiftX,
+    maxY: (ys.length > 0 ? Math.max(...ys) : 0) + shiftY,
+  }
+}
+
+/**
+ * Route long feedback edges and any connector that intersects an unrelated
+ * node around the outside of all nodes in its span.
+ */
+function routeExteriorEdges(
+  edges: PositionedEdge[],
+  nodes: PositionedNode[],
+  direction: MermaidGraph['direction'],
+): void {
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const verticalFlow = direction === 'TD' || direction === 'TB' || direction === 'BT'
+  const laneGap = 24
+  const laneStep = 16
+  let firstLaneCount = 0
+  let secondLaneCount = 0
+  const routedEdges: PositionedEdge[] = []
+
+  for (const edge of edges) {
+    const isLongFeedback =
+      edge.sourceRank != null &&
+      edge.targetRank != null &&
+      edge.sourceRank > edge.targetRank &&
+      edge.points.length >= 4
+    const crossesNode = edgeCrossesUnrelatedNode(edge, nodes)
+    if (!isLongFeedback && !crossesNode) continue
+
+    const source = nodeById.get(edge.source)
+    const target = nodeById.get(edge.target)
+    if (!source || !target) continue
+
+    const sourceCx = source.x + source.width / 2
+    const sourceCy = source.y + source.height / 2
+    const targetCx = target.x + target.width / 2
+    const targetCy = target.y + target.height / 2
+
+    if (verticalFlow) {
+      const spanTop = Math.min(sourceCy, targetCy)
+      const spanBottom = Math.max(sourceCy, targetCy)
+      const blockers = nodes.filter(node => {
+        const cy = node.y + node.height / 2
+        return cy >= spanTop && cy <= spanBottom
+      })
+      const minX = Math.min(...blockers.map(node => node.x))
+      const maxX = Math.max(...blockers.map(node => node.x + node.width))
+      const currentMinX = Math.min(...edge.points.map(point => point.x))
+      const currentMaxX = Math.max(...edge.points.map(point => point.x))
+      const centerX = (sourceCx + targetCx) / 2
+      const useLeft = centerX - currentMinX >= currentMaxX - centerX
+      const leftLaneX = minX - laneGap - firstLaneCount * laneStep
+
+      if (useLeft && leftLaneX >= 0) {
+        const laneX = leftLaneX
+        firstLaneCount++
+        edge.points = [
+          { x: source.x, y: sourceCy },
+          { x: laneX, y: sourceCy },
+          { x: laneX, y: targetCy },
+          { x: target.x, y: targetCy },
+        ]
+        if (edge.label) edge.labelPosition = { x: laneX, y: (sourceCy + targetCy) / 2 }
+      } else {
+        const laneX = maxX + laneGap + secondLaneCount++ * laneStep
+        edge.points = [
+          { x: source.x + source.width, y: sourceCy },
+          { x: laneX, y: sourceCy },
+          { x: laneX, y: targetCy },
+          { x: target.x + target.width, y: targetCy },
+        ]
+        if (edge.label) edge.labelPosition = { x: laneX, y: (sourceCy + targetCy) / 2 }
+      }
+      routedEdges.push(edge)
+    } else {
+      const spanLeft = Math.min(sourceCx, targetCx)
+      const spanRight = Math.max(sourceCx, targetCx)
+      const blockers = nodes.filter(node => {
+        const cx = node.x + node.width / 2
+        return cx >= spanLeft && cx <= spanRight
+      })
+      const minY = Math.min(...blockers.map(node => node.y))
+      const maxY = Math.max(...blockers.map(node => node.y + node.height))
+      const currentMinY = Math.min(...edge.points.map(point => point.y))
+      const currentMaxY = Math.max(...edge.points.map(point => point.y))
+      const centerY = (sourceCy + targetCy) / 2
+      const useTop = centerY - currentMinY >= currentMaxY - centerY
+      const topLaneY = minY - laneGap - firstLaneCount * laneStep
+
+      if (useTop && topLaneY >= 0) {
+        const laneY = topLaneY
+        firstLaneCount++
+        edge.points = [
+          { x: sourceCx, y: source.y },
+          { x: sourceCx, y: laneY },
+          { x: targetCx, y: laneY },
+          { x: targetCx, y: target.y },
+        ]
+        if (edge.label) edge.labelPosition = { x: (sourceCx + targetCx) / 2, y: laneY }
+      } else {
+        const laneY = maxY + laneGap + secondLaneCount++ * laneStep
+        edge.points = [
+          { x: sourceCx, y: source.y + source.height },
+          { x: sourceCx, y: laneY },
+          { x: targetCx, y: laneY },
+          { x: targetCx, y: target.y + target.height },
+        ]
+        if (edge.label) edge.labelPosition = { x: (sourceCx + targetCx) / 2, y: laneY }
+      }
+      routedEdges.push(edge)
+    }
+  }
+
+  separateExteriorPorts(routedEdges, nodeById, verticalFlow, 'source')
+  separateExteriorPorts(routedEdges, nodeById, verticalFlow, 'target')
+}
+
+/** Whether any orthogonal segment runs through a node it does not connect to. */
+function edgeCrossesUnrelatedNode(edge: PositionedEdge, nodes: PositionedNode[]): boolean {
+  const blockers = nodes.filter(node => node.id !== edge.source && node.id !== edge.target)
+  const inset = 1
+
+  for (let index = 1; index < edge.points.length; index++) {
+    const start = edge.points[index - 1]!
+    const end = edge.points[index]!
+    const segmentLeft = Math.min(start.x, end.x)
+    const segmentRight = Math.max(start.x, end.x)
+    const segmentTop = Math.min(start.y, end.y)
+    const segmentBottom = Math.max(start.y, end.y)
+    const vertical = Math.abs(start.x - end.x) < 1
+    const horizontal = Math.abs(start.y - end.y) < 1
+
+    for (const node of blockers) {
+      const left = node.x + inset
+      const right = node.x + node.width - inset
+      const top = node.y + inset
+      const bottom = node.y + node.height - inset
+
+      if (
+        (vertical && start.x > left && start.x < right && segmentBottom > top && segmentTop < bottom) ||
+        (horizontal && start.y > top && start.y < bottom && segmentRight > left && segmentLeft < right)
+      ) return true
+    }
+  }
+
+  return false
+}
+
+/** Keep multiple exterior routes sharing a node side from overlapping. */
+function separateExteriorPorts(
+  edges: PositionedEdge[],
+  nodeById: Map<string, PositionedNode>,
+  verticalFlow: boolean,
+  endpoint: 'source' | 'target',
+): void {
+  const groups = new Map<string, PositionedEdge[]>()
+
+  for (const edge of edges) {
+    const nodeId = endpoint === 'source' ? edge.source : edge.target
+    const node = nodeById.get(nodeId)
+    const point = endpoint === 'source' ? edge.points[0] : edge.points[edge.points.length - 1]
+    if (!node || !point) continue
+
+    const side = verticalFlow
+      ? (Math.abs(point.x - node.x) < 1 ? 'left' : 'right')
+      : (Math.abs(point.y - node.y) < 1 ? 'top' : 'bottom')
+    const key = `${nodeId}:${side}`
+    const group = groups.get(key) ?? []
+    group.push(edge)
+    groups.set(key, group)
+  }
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    const nodeId = endpoint === 'source' ? group[0]!.source : group[0]!.target
+    const node = nodeById.get(nodeId)!
+    const step = 16
+    const maxOffset = Math.max(0, (verticalFlow ? node.height : node.width) / 2 - 12)
+
+    for (let index = 0; index < group.length; index++) {
+      const edge = group[index]!
+      const offset = Math.max(
+        -maxOffset,
+        Math.min(maxOffset, (index - (group.length - 1) / 2) * step),
+      )
+      const pointIndex = endpoint === 'source' ? 0 : edge.points.length - 1
+      const adjacentIndex = endpoint === 'source' ? 1 : pointIndex - 1
+
+      if (verticalFlow) {
+        const y = node.y + node.height / 2 + offset
+        edge.points[adjacentIndex] = { ...edge.points[adjacentIndex]!, y }
+        edge.points[pointIndex] = { ...edge.points[pointIndex]!, y }
+      } else {
+        const x = node.x + node.width / 2 + offset
+        edge.points[adjacentIndex] = { ...edge.points[adjacentIndex]!, x }
+        edge.points[pointIndex] = { ...edge.points[pointIndex]!, x }
+      }
+    }
   }
 }
 

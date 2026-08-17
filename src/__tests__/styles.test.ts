@@ -13,7 +13,7 @@ import type { DiagramColors } from '../theme.ts'
 
 describe('THEMES', () => {
   it('contains well-known theme palettes', () => {
-    expect(THEMES['zinc-light']).toBeDefined()
+    expect(THEMES['vercel-light']).toBeDefined()
     expect(THEMES['zinc-dark']).toBeDefined()
     expect(THEMES['tokyo-night']).toBeDefined()
     expect(THEMES['catppuccin-mocha']).toBeDefined()
@@ -29,9 +29,9 @@ describe('THEMES', () => {
 })
 
 describe('DEFAULTS', () => {
-  it('provides zinc-light bg/fg', () => {
-    expect(DEFAULTS.bg).toBe('#FFFFFF')
-    expect(DEFAULTS.fg).toBe('#27272A')
+  it('provides Vercel dark bg/fg', () => {
+    expect(DEFAULTS.bg).toBe('#0A0A0A')
+    expect(DEFAULTS.fg).toBe('#EDEDED')
   })
 })
 
@@ -151,31 +151,31 @@ describe('estimateTextWidth', () => {
 
 describe('constants', () => {
   it('FONT_SIZES has expected values', () => {
-    expect(FONT_SIZES.nodeLabel).toBe(13)
-    expect(FONT_SIZES.edgeLabel).toBe(11)
-    expect(FONT_SIZES.groupHeader).toBe(12)
+    expect(FONT_SIZES.nodeLabel).toBe(19.2)
+    expect(FONT_SIZES.edgeLabel).toBe(14)
+    expect(FONT_SIZES.groupHeader).toBe(16)
   })
 
   it('FONT_WEIGHTS has expected values', () => {
-    expect(FONT_WEIGHTS.nodeLabel).toBe(500)
+    expect(FONT_WEIGHTS.nodeLabel).toBe(400)
     expect(FONT_WEIGHTS.edgeLabel).toBe(400)
     expect(FONT_WEIGHTS.groupHeader).toBe(600)
   })
 
   it('NODE_PADDING has expected values', () => {
-    expect(NODE_PADDING.horizontal).toBe(16)
-    expect(NODE_PADDING.vertical).toBe(10)
+    expect(NODE_PADDING.horizontal).toBe(28)
+    expect(NODE_PADDING.vertical).toBe(18)
     expect(NODE_PADDING.diamondExtra).toBe(24)
   })
 
   it('STROKE_WIDTHS has expected values', () => {
     expect(STROKE_WIDTHS.outerBox).toBe(1)
     expect(STROKE_WIDTHS.innerBox).toBe(0.75)
-    expect(STROKE_WIDTHS.connector).toBe(0.75)
+    expect(STROKE_WIDTHS.connector).toBe(1.5)
   })
 
   it('ARROW_HEAD has expected values', () => {
-    expect(ARROW_HEAD.width).toBe(8)
-    expect(ARROW_HEAD.height).toBe(4.8)
+    expect(ARROW_HEAD.width).toBe(7)
+    expect(ARROW_HEAD.height).toBe(7)
   })
 })
