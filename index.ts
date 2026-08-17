@@ -141,6 +141,14 @@ async function generateHtml(): Promise<string> {
         </div>`
   }).join('\n')
 
+  const playgroundTocSection = `
+        <div class="toc-category">
+          <h3>Playground</h3>
+          <ol>
+            <li><a href="#playground">Live editor</a></li>
+          </ol>
+        </div>`
+
   // Step 3b: Build theme selector pills — only Vercel Dark + Vercel Light
   const themePillsHtml = `
     <div class="theme-pills-inline">
@@ -219,6 +227,22 @@ async function generateHtml(): Promise<string> {
 
   const heroCardsHtml = heroCards.join('\n')
   const regularCardsHtml = regularCards.join('\n')
+  const playgroundSource = `stateDiagram-v2
+    [*] --> Creating: create
+    Creating --> Running
+
+    Running --> Stopping: stop / deadline
+    Running --> Snapshotting: snapshot
+    Stopping --> Snapshotting
+    Snapshotting --> Stopped
+
+    Stopped --> Running: resume
+    Stopped --> Forked: fork
+    Forked --> Running
+
+    Running --> Deleted: delete
+    Stopped --> Deleted: delete
+    Deleted --> [*]`
 
   // ============================================================================
   // Step 5: Assemble full HTML
@@ -641,6 +665,252 @@ async function generateHtml(): Promise<string> {
       background: var(--t-bg);
       margin-bottom: 2rem;
       overflow: hidden;
+    }
+
+    /* -- Live Mermaid playground -- */
+    .playground {
+      margin-top: 2.5rem;
+    }
+    .playground-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+      min-height: 480px;
+    }
+    .playground-pane {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .playground-editor-pane {
+      background: color-mix(in srgb, var(--t-fg) 1.5%, var(--t-bg));
+      border-right: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
+    }
+    .playground-pane-header {
+      min-height: 42px;
+      padding: 0 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
+      color: color-mix(in srgb, var(--t-fg) 45%, var(--t-bg));
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .playground-status {
+      color: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg));
+      font-weight: 400;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+    .playground-preview-meta,
+    .playground-animation-controls {
+      display: flex;
+      align-items: center;
+    }
+    .playground-preview-meta { gap: 0.75rem; }
+    .playground-animation-controls {
+      gap: 0.25rem;
+      padding-left: 0.75rem;
+      border-left: 1px solid color-mix(in srgb, var(--t-fg) 10%, var(--t-bg));
+    }
+    .playground-control {
+      min-height: 26px;
+      padding: 0 0.55rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      border: 1px solid color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
+      border-radius: 999px;
+      background: transparent;
+      color: color-mix(in srgb, var(--t-fg) 48%, var(--t-bg));
+      font: inherit;
+      font-weight: 500;
+      letter-spacing: normal;
+      text-transform: none;
+      cursor: pointer;
+    }
+    .playground-control:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--t-fg) 22%, var(--t-bg));
+      color: var(--t-fg);
+    }
+    .playground-control[aria-pressed="true"] {
+      border-color: color-mix(in srgb, var(--t-fg) 28%, var(--t-bg));
+      background: color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));
+      color: var(--t-fg);
+    }
+    .playground-control:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--t-fg) 45%, transparent);
+      outline-offset: 2px;
+    }
+    .playground-replay {
+      width: 26px;
+      padding: 0;
+      font-size: 15px;
+    }
+    .playground-control:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .playground-export {
+      position: relative;
+    }
+    .playground-export > summary {
+      list-style: none;
+    }
+    .playground-export > summary::-webkit-details-marker {
+      display: none;
+    }
+    .playground-export[open] > summary {
+      border-color: color-mix(in srgb, var(--t-fg) 28%, var(--t-bg));
+      background: color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));
+      color: var(--t-fg);
+    }
+    .playground-export-chevron {
+      width: 10px;
+      height: 10px;
+      transition: transform 0.15s ease;
+    }
+    .playground-export[open] .playground-export-chevron {
+      transform: rotate(180deg);
+    }
+    .playground-export-menu {
+      position: absolute;
+      z-index: 20;
+      top: calc(100% + 8px);
+      right: 0;
+      width: 272px;
+      padding: 0.875rem;
+      border: 1px solid color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
+      border-radius: 10px;
+      background: var(--t-bg);
+      color: var(--t-fg);
+      letter-spacing: normal;
+      text-transform: none;
+    }
+    .playground-export-field {
+      display: grid;
+      gap: 0.4rem;
+    }
+    .playground-export-label {
+      color: color-mix(in srgb, var(--t-fg) 55%, var(--t-bg));
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+    .playground-export-select {
+      width: 100%;
+      height: 34px;
+      padding: 0 0.625rem;
+      border: 1px solid color-mix(in srgb, var(--t-fg) 14%, var(--t-bg));
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--t-fg) 3%, var(--t-bg));
+      color: var(--t-fg);
+      font: inherit;
+      font-size: 0.75rem;
+    }
+    .playground-export-check {
+      margin-top: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: color-mix(in srgb, var(--t-fg) 72%, var(--t-bg));
+      font-size: 0.75rem;
+      font-weight: 400;
+      cursor: pointer;
+    }
+    .playground-export-check input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      accent-color: var(--t-fg);
+    }
+    .playground-export-help {
+      margin: 0.75rem 0 0;
+      color: color-mix(in srgb, var(--t-fg) 35%, var(--t-bg));
+      font-size: 0.675rem;
+      font-weight: 400;
+      line-height: 1.45;
+    }
+    .playground-export-actions {
+      margin-top: 0.875rem;
+      padding-top: 0.75rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      border-top: 1px solid color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));
+    }
+    .playground-export-action {
+      height: 32px;
+      border: 1px solid color-mix(in srgb, var(--t-fg) 14%, var(--t-bg));
+      border-radius: 6px;
+      background: transparent;
+      color: var(--t-fg);
+      font: inherit;
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .playground-export-action:hover {
+      background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg));
+    }
+    .playground-export-action.primary {
+      background: var(--t-fg);
+      color: var(--t-bg);
+    }
+    .playground-export-action.primary:hover {
+      background: color-mix(in srgb, var(--t-fg) 86%, var(--t-bg));
+    }
+    .playground-editor {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      padding: 1.25rem;
+      border: 0;
+      outline: 0;
+      resize: none;
+      background: transparent;
+      color: color-mix(in srgb, var(--t-fg) 85%, var(--t-bg));
+      caret-color: var(--t-fg);
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.85rem;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+    .playground-editor:focus-visible {
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t-fg) 18%, var(--t-bg));
+    }
+    .playground-preview {
+      flex: 1;
+      min-height: 0;
+      padding: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+    }
+    .playground-preview svg {
+      max-width: 100%;
+      max-height: 100%;
+      height: auto;
+    }
+    .playground-empty {
+      color: color-mix(in srgb, var(--t-fg) 35%, var(--t-bg));
+      font-size: 0.875rem;
+    }
+    @media (max-width: 900px) {
+      .playground-content {
+        grid-template-columns: 1fr;
+      }
+      .playground-editor-pane {
+        min-height: 300px;
+        border-right: 0;
+        border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
+      }
+      .playground-preview-pane {
+        min-height: 380px;
+      }
     }
 
     /* -- Hero sample (full-width SVG showcase, above Samples heading) -- */
@@ -1088,6 +1358,7 @@ async function generateHtml(): Promise<string> {
     </div>
     <div class="mega-menu shadow-modal-small" id="mega-menu">
       <div class="toc-grid">
+        ${playgroundTocSection}
         ${tocSections}
       </div>
     </div>
@@ -1120,6 +1391,61 @@ async function generateHtml(): Promise<string> {
 
 ${heroCardsHtml}
 
+  <section class="sample playground" id="playground">
+    <div class="sample-header">
+      <h2>Try it yourself</h2>
+      <p class="description">Edit Mermaid syntax and see the diagram update live.</p>
+    </div>
+    <div class="playground-content">
+      <div class="playground-pane playground-editor-pane">
+        <div class="playground-pane-header">Mermaid</div>
+        <textarea class="playground-editor" id="playground-editor" aria-label="Mermaid source" autocomplete="off" autocapitalize="off" spellcheck="false">${escapeHtml(playgroundSource)}</textarea>
+      </div>
+      <div class="playground-pane playground-preview-pane">
+        <div class="playground-pane-header">
+          <span>Preview</span>
+          <div class="playground-preview-meta">
+            <span class="playground-status" id="playground-status" aria-live="polite">Rendering…</span>
+            <div class="playground-animation-controls" aria-label="Animation controls">
+              <button class="playground-control" id="playground-animation-toggle" type="button" aria-pressed="false">Animation</button>
+              <button class="playground-control playground-replay" id="playground-animation-replay" type="button" aria-label="Replay animation" title="Replay animation" disabled>&#x21BB;</button>
+            </div>
+            <details class="playground-export" id="playground-export-menu">
+              <summary class="playground-control">
+                Export
+                <svg class="playground-export-chevron" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.25"><path d="M2 3.5 5 6.5 8 3.5" /></svg>
+              </summary>
+              <div class="playground-export-menu shadow-modal-small">
+                <div class="playground-export-field">
+                  <label class="playground-export-label" for="playground-export-ratio">Aspect ratio</label>
+                  <select class="playground-export-select" id="playground-export-ratio">
+                    <option value="original">Original diagram</option>
+                    <option value="16:9">16:9 · Presentation</option>
+                    <option value="4:3">4:3 · Document</option>
+                    <option value="1:1">1:1 · Square</option>
+                    <option value="9:16">9:16 · Portrait</option>
+                  </select>
+                </div>
+                <label class="playground-export-check">
+                  <input id="playground-export-transparent" type="checkbox" />
+                  Transparent background
+                </label>
+                <p class="playground-export-help">Aspect-ratio presets expand the canvas without stretching the diagram. PNG exports at 2× resolution.</p>
+                <div class="playground-export-actions">
+                  <button class="playground-export-action" type="button" data-export-format="svg">Download SVG</button>
+                  <button class="playground-export-action primary" type="button" data-export-format="png">Download PNG</button>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+        <div class="playground-preview" id="playground-preview" aria-live="polite" aria-busy="true">
+          <div class="loading-spinner"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <h2 class="section-title">Samples</h2>
 
 ${regularCardsHtml}
@@ -1143,6 +1469,7 @@ ${bundleJs}
   // Stores each SVG element's original inline style attribute (from initial render)
   // so we can restore per-sample colors when switching back to "Default".
   var originalSvgStyles = [];
+  var playgroundOriginalSvgStyle = '';
 
   function hexToRgb(hex) {
     if (!hex || typeof hex !== 'string') return null;
@@ -1246,6 +1573,23 @@ ${bundleJs}
         if (originalSvgStyles[j] !== undefined) {
           svgEl.setAttribute('style', originalSvgStyles[j]);
         }
+      }
+    }
+
+    // Keep the live playground preview in sync with the selected theme.
+    var playgroundSvg = document.querySelector('#playground-preview svg');
+    if (playgroundSvg) {
+      if (theme) {
+        playgroundSvg.style.setProperty('--bg', theme.bg);
+        playgroundSvg.style.setProperty('--fg', theme.fg);
+        var playgroundEnrichment = ['line', 'accent', 'muted', 'surface', 'border'];
+        for (var p = 0; p < playgroundEnrichment.length; p++) {
+          var playgroundProp = playgroundEnrichment[p];
+          if (theme[playgroundProp]) playgroundSvg.style.setProperty('--' + playgroundProp, theme[playgroundProp]);
+          else playgroundSvg.style.removeProperty('--' + playgroundProp);
+        }
+      } else {
+        playgroundSvg.setAttribute('style', playgroundOriginalSvgStyle);
       }
     }
 
@@ -1438,6 +1782,257 @@ ${bundleJs}
   } else {
     setShadowVars(null);
   }
+
+  // -- Live playground --
+  var playgroundEditor = document.getElementById('playground-editor');
+  var playgroundPreview = document.getElementById('playground-preview');
+  var playgroundStatus = document.getElementById('playground-status');
+  var playgroundAnimationToggle = document.getElementById('playground-animation-toggle');
+  var playgroundAnimationReplay = document.getElementById('playground-animation-replay');
+  var playgroundExportMenu = document.getElementById('playground-export-menu');
+  var playgroundExportRatio = document.getElementById('playground-export-ratio');
+  var playgroundExportTransparent = document.getElementById('playground-export-transparent');
+  var playgroundAnimationEnabled = false;
+  var playgroundRenderId = 0;
+  var playgroundDebounce;
+
+  async function renderPlayground() {
+    var renderId = ++playgroundRenderId;
+    var source = playgroundEditor.value;
+
+    if (!source.trim()) {
+      playgroundPreview.innerHTML = '<div class="playground-empty">Enter Mermaid syntax to see a preview.</div>';
+      playgroundPreview.setAttribute('aria-busy', 'false');
+      playgroundStatus.textContent = 'Waiting for input';
+      return;
+    }
+
+    playgroundPreview.setAttribute('aria-busy', 'true');
+    playgroundStatus.textContent = 'Rendering…';
+    playgroundStatus.removeAttribute('title');
+    var startedAt = performance.now();
+
+    try {
+      var svg = await renderMermaid(source, playgroundAnimationEnabled ? { animate: true } : {});
+      if (renderId !== playgroundRenderId) return;
+
+      playgroundPreview.innerHTML = svg;
+      var svgEl = playgroundPreview.querySelector('svg');
+      if (svgEl) {
+        playgroundOriginalSvgStyle = svgEl.getAttribute('style') || '';
+        var activeThemeKey = localStorage.getItem('mermaid-theme');
+        var activeTheme = activeThemeKey ? THEMES[activeThemeKey] : null;
+        if (activeTheme) {
+          svgEl.style.setProperty('--bg', activeTheme.bg);
+          svgEl.style.setProperty('--fg', activeTheme.fg);
+          var enrichment = ['line', 'accent', 'muted', 'surface', 'border'];
+          for (var k = 0; k < enrichment.length; k++) {
+            if (activeTheme[enrichment[k]]) svgEl.style.setProperty('--' + enrichment[k], activeTheme[enrichment[k]]);
+            else svgEl.style.removeProperty('--' + enrichment[k]);
+          }
+        }
+      }
+      playgroundStatus.textContent = 'Rendered in ' + (performance.now() - startedAt).toFixed(0) + ' ms';
+    } catch (error) {
+      if (renderId !== playgroundRenderId) return;
+      var errorEl = document.createElement('div');
+      errorEl.className = 'render-error';
+      errorEl.textContent = String(error);
+      playgroundPreview.replaceChildren(errorEl);
+      playgroundStatus.textContent = 'Syntax error';
+    } finally {
+      if (renderId === playgroundRenderId) playgroundPreview.setAttribute('aria-busy', 'false');
+    }
+  }
+
+  function parseExportRatio(value) {
+    if (value === 'original') return null;
+    var parts = value.split(':');
+    return Number(parts[0]) / Number(parts[1]);
+  }
+
+  function formatExportNumber(value) {
+    return Number(value.toFixed(3));
+  }
+
+  async function buildPlaygroundExportSvg() {
+    var source = playgroundEditor.value;
+    if (!source.trim()) throw new Error('Enter Mermaid syntax before exporting.');
+
+    var activeThemeKey = localStorage.getItem('mermaid-theme');
+    var activeTheme = activeThemeKey ? THEMES[activeThemeKey] : null;
+    var transparent = playgroundExportTransparent.checked;
+    var renderOptions = activeTheme ? Object.assign({}, activeTheme) : {};
+    renderOptions.transparent = transparent;
+
+    // Exports are intentionally static and deterministic, independent of the
+    // playground's animation preview state.
+    var svgText = await renderMermaid(source, renderOptions);
+    var documentParser = new DOMParser();
+    var svgDocument = documentParser.parseFromString(svgText, 'image/svg+xml');
+    var svgRoot = svgDocument.documentElement;
+    if (svgRoot.nodeName.toLowerCase() === 'parsererror') {
+      throw new Error('Could not prepare the SVG export.');
+    }
+
+    var viewBox = (svgRoot.getAttribute('viewBox') || '').trim().split(/\\s+/).map(Number);
+    if (viewBox.length !== 4 || viewBox.some(function(value) { return !Number.isFinite(value); })) {
+      throw new Error('The rendered diagram has invalid dimensions.');
+    }
+
+    var exportX = viewBox[0];
+    var exportY = viewBox[1];
+    var exportWidth = viewBox[2];
+    var exportHeight = viewBox[3];
+    var requestedRatio = parseExportRatio(playgroundExportRatio.value);
+
+    // Expand only the shorter canvas dimension. Content retains its natural
+    // scale and remains centered; aspect-ratio presets never distort geometry.
+    if (requestedRatio) {
+      var currentRatio = exportWidth / exportHeight;
+      if (currentRatio > requestedRatio) {
+        var expandedHeight = exportWidth / requestedRatio;
+        exportY -= (expandedHeight - exportHeight) / 2;
+        exportHeight = expandedHeight;
+      } else {
+        var expandedWidth = exportHeight * requestedRatio;
+        exportX -= (expandedWidth - exportWidth) / 2;
+        exportWidth = expandedWidth;
+      }
+    }
+
+    exportX = formatExportNumber(exportX);
+    exportY = formatExportNumber(exportY);
+    exportWidth = formatExportNumber(exportWidth);
+    exportHeight = formatExportNumber(exportHeight);
+    svgRoot.setAttribute('viewBox', [exportX, exportY, exportWidth, exportHeight].join(' '));
+    svgRoot.setAttribute('width', String(exportWidth));
+    svgRoot.setAttribute('height', String(exportHeight));
+
+    // An explicit background rect is more portable than relying on the CSS
+    // background property when the SVG is opened outside a browser.
+    if (!transparent) {
+      var background = svgDocument.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      background.setAttribute('x', String(exportX));
+      background.setAttribute('y', String(exportY));
+      background.setAttribute('width', String(exportWidth));
+      background.setAttribute('height', String(exportHeight));
+      background.setAttribute('fill', activeTheme ? activeTheme.bg : '#0A0A0A');
+      svgRoot.insertBefore(background, svgRoot.firstChild);
+    }
+
+    return {
+      text: new XMLSerializer().serializeToString(svgRoot),
+      width: exportWidth,
+      height: exportHeight,
+    };
+  }
+
+  function rasterizeExportSvg(svgExport) {
+    return new Promise(function(resolve, reject) {
+      var sourceBlob = new Blob([svgExport.text], { type: 'image/svg+xml;charset=utf-8' });
+      var sourceUrl = URL.createObjectURL(sourceBlob);
+      var image = new Image();
+
+      image.onload = function() {
+        var maxScaleBySide = 8192 / Math.max(svgExport.width, svgExport.height);
+        var maxScaleByArea = Math.sqrt(64000000 / (svgExport.width * svgExport.height));
+        var scale = Math.min(2, maxScaleBySide, maxScaleByArea);
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(svgExport.width * scale));
+        canvas.height = Math.max(1, Math.round(svgExport.height * scale));
+        var context = canvas.getContext('2d');
+        if (!context) {
+          URL.revokeObjectURL(sourceUrl);
+          reject(new Error('Canvas export is unavailable.'));
+          return;
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(sourceUrl);
+        canvas.toBlob(function(blob) {
+          if (blob) resolve(blob);
+          else reject(new Error('Could not create the PNG export.'));
+        }, 'image/png');
+      };
+      image.onerror = function() {
+        URL.revokeObjectURL(sourceUrl);
+        reject(new Error('Could not rasterize the diagram.'));
+      };
+      image.src = sourceUrl;
+    });
+  }
+
+  function downloadExportBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  async function exportPlayground(format) {
+    playgroundStatus.textContent = 'Exporting ' + format.toUpperCase() + '…';
+    playgroundStatus.removeAttribute('title');
+    try {
+      var svgExport = await buildPlaygroundExportSvg();
+      var ratioSuffix = playgroundExportRatio.value === 'original'
+        ? ''
+        : '-' + playgroundExportRatio.value.replace(':', 'x');
+      var filename = 'beautiful-mermaid' + ratioSuffix + '.' + format;
+      var blob = format === 'svg'
+        ? new Blob([svgExport.text], { type: 'image/svg+xml;charset=utf-8' })
+        : await rasterizeExportSvg(svgExport);
+      downloadExportBlob(blob, filename);
+      playgroundStatus.textContent = 'Exported ' + format.toUpperCase();
+      playgroundExportMenu.open = false;
+    } catch (error) {
+      playgroundStatus.textContent = 'Export failed';
+      playgroundStatus.title = String(error);
+      console.error(error);
+    }
+  }
+
+  playgroundEditor.addEventListener('input', function() {
+    clearTimeout(playgroundDebounce);
+    playgroundDebounce = setTimeout(renderPlayground, 180);
+  });
+
+  playgroundAnimationToggle.addEventListener('click', function() {
+    playgroundAnimationEnabled = !playgroundAnimationEnabled;
+    playgroundAnimationToggle.setAttribute('aria-pressed', String(playgroundAnimationEnabled));
+    playgroundAnimationReplay.disabled = !playgroundAnimationEnabled;
+    renderPlayground();
+  });
+
+  playgroundAnimationReplay.addEventListener('click', function() {
+    if (playgroundAnimationEnabled) renderPlayground();
+  });
+
+  var playgroundExportActions = document.querySelectorAll('[data-export-format]');
+  for (var exportActionIndex = 0; exportActionIndex < playgroundExportActions.length; exportActionIndex++) {
+    playgroundExportActions[exportActionIndex].addEventListener('click', function(event) {
+      exportPlayground(event.currentTarget.getAttribute('data-export-format'));
+    });
+  }
+
+  document.addEventListener('click', function(event) {
+    if (playgroundExportMenu.open && !playgroundExportMenu.contains(event.target)) {
+      playgroundExportMenu.open = false;
+    }
+  });
+
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && playgroundExportMenu.open) {
+      playgroundExportMenu.open = false;
+      playgroundExportMenu.querySelector('summary').focus();
+    }
+  });
+
+  await renderPlayground();
 
   // ============================================================================
   // Progressive rendering — render each diagram sequentially

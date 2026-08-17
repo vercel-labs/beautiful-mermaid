@@ -103,10 +103,10 @@ describe('renderSvg – SVG structure', () => {
 // ============================================================================
 
 describe('renderSvg – node shapes', () => {
-  it('renders rectangle with rx=0', () => {
+  it('renders rectangle with rx=6', () => {
     const graph = makeGraph({ nodes: [makeNode({ shape: 'rectangle' })] })
     const svg = renderSvg(graph, lightColors)
-    expect(svg).toContain('rx="0" ry="0"')
+    expect(svg).toContain('rx="6" ry="6"')
   })
 
   it('renders rounded rectangle with rx=6', () => {
@@ -244,24 +244,18 @@ describe('renderSvg – new shapes (Batch 2)', () => {
 // ============================================================================
 
 describe('renderSvg – state pseudostates', () => {
-  it('renders state-start as a filled circle', () => {
+  it('keeps state-start as an invisible layout anchor', () => {
     const node = makeNode({ shape: 'state-start', label: '', width: 28, height: 28 })
     const graph = makeGraph({ nodes: [node] })
     const svg = renderSvg(graph, lightColors)
-    expect(svg).toContain('<circle')
-    expect(svg).toContain('fill="var(--_text)"')
-    expect(svg).toContain('stroke="none"')
+    expect(svg).not.toContain('<circle')
   })
 
-  it('renders state-end as bullseye (two circles)', () => {
+  it('keeps state-end as an invisible layout anchor', () => {
     const node = makeNode({ shape: 'state-end', label: '', width: 28, height: 28 })
     const graph = makeGraph({ nodes: [node] })
     const svg = renderSvg(graph, lightColors)
-    const circleMatches = svg.match(/<circle/g) ?? []
-    expect(circleMatches.length).toBe(2)
-    // Outer is stroked, inner is filled
-    expect(svg).toContain('fill="none"')
-    expect(svg).toContain('fill="var(--_text)"')
+    expect(svg).not.toContain('<circle')
   })
 })
 
@@ -275,7 +269,7 @@ describe('renderSvg – edges', () => {
     const graph = makeGraph({ edges: [edge] })
     const svg = renderSvg(graph, lightColors)
     expect(svg).toContain('<polyline')
-    expect(svg).toContain('points="100,120 100,200"')
+    expect(svg).toContain('points="100,120 100,191"')
     expect(svg).toContain('marker-end="url(#arrowhead)"')
   })
 
@@ -290,7 +284,7 @@ describe('renderSvg – edges', () => {
     const edge = makeEdge({ style: 'thick' })
     const graph = makeGraph({ edges: [edge] })
     const svg = renderSvg(graph, lightColors)
-    expect(svg).toContain('stroke-width="1.5"')
+    expect(svg).toContain('stroke-width="3"')
   })
 
   it('does not add dasharray to solid edges', () => {
@@ -335,7 +329,7 @@ describe('renderSvg – edge labels', () => {
     const graph = makeGraph({ edges: [edge] })
     const svg = renderSvg(graph, lightColors)
     expect(svg).toContain('>Yes</text>')
-    expect(svg).toContain('rx="2" ry="2"')
+    expect(svg).toContain('rx="15" ry="15"')
   })
 
   it('does not render label elements for edges without labels', () => {
@@ -377,7 +371,7 @@ describe('renderSvg – groups', () => {
     const graph = makeGraph({ groups: [group] })
     const svg = renderSvg(graph, lightColors)
     const rectCount = (svg.match(/x="20" y="20"/g) ?? []).length
-    expect(rectCount).toBeGreaterThanOrEqual(2)
+    expect(rectCount).toBe(1)
     expect(svg).toContain('>Backend</text>')
   })
 

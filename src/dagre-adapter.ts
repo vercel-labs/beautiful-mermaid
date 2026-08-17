@@ -15,6 +15,9 @@
 
 import type { Point } from './types.ts'
 
+/** Shorter terminal runs cannot fit a connector plus arrowhead cleanly. */
+const MIN_TERMINAL_RUN = 12
+
 /**
  * Convert dagre's center-based node coordinates to top-left origin.
  * Dagre returns (x, y) as the center of the node bounding box.
@@ -57,8 +60,8 @@ export function clipToDiamondBoundary(
  * Project a point from the rectangular bounding box onto the circle boundary.
  *
  * Dagre treats all nodes as rectangles, so edge connection points land on the
- * rectangle boundary. For circular shapes (circle, doublecircle, state-start,
- * state-end), the actual visual boundary is inscribed within the rectangle.
+ * rectangle boundary. For circular shapes (circle and doublecircle), the
+ * actual visual boundary is inscribed within the rectangle.
  * At non-cardinal angles, the rectangle boundary is *outside* the circle —
  * making edges appear to float in the air.
  *
@@ -229,11 +232,13 @@ export interface NodeRect {
  * segment becomes horizontal — but the endpoint stays on the top edge. The
  * arrow visually enters the box from the side at the top, going "inside."
  *
- * This function corrects both endpoints so they connect to the side the edge
- * actually approaches from:
+ * This function corrects both endpoints so they connect to the boundary the
+ * edge actually approaches from:
  *   - Horizontal last segment → endpoint on left/right side
  *   - Vertical last segment  → endpoint on top/bottom
  *   - Similarly for the first segment and source node
+ *   - If that would create a tiny reversal into the node, preserve the prior
+ *     segment's natural approach and remove the artificial final bend
  *
  * When the edge path is within the node's bounds, connects at the natural
  * position to avoid unnecessary bends. Otherwise routes to node center.
@@ -291,21 +296,75 @@ export function clipEndpointsToNodes(
       const isPrimarilyVertical = !isStrictlyHorizontal && !isStrictlyVertical && dx < dy
 
       if (isStrictlyHorizontal) {
-        // Strictly horizontal — route to center for visual balance
-        const approachFromLeft = curr.x > prev.x
-        const sideX = approachFromLeft
-          ? targetNode.cx - targetNode.hw
-          : targetNode.cx + targetNode.hw
-        result[last] = { x: sideX, y: targetNode.cy }
-        result[last - 1] = { ...prev, y: targetNode.cy }
+        const beforePrev = result[last - 2]
+        const prevInsideTargetWidth =
+          prev.x >= targetNode.cx - targetNode.hw &&
+          prev.x <= targetNode.cx + targetNode.hw
+        const prevNearTargetWidth =
+          prev.x >= targetNode.cx - targetNode.hw - MIN_TERMINAL_RUN &&
+          prev.x <= targetNode.cx + targetNode.hw + MIN_TERMINAL_RUN
+        const arrivesVertically = beforePrev &&
+          Math.abs(beforePrev.x - prev.x) < 1 &&
+          Math.abs(beforePrev.y - prev.y) >= 1
+
+        if (prevNearTargetWidth && arrivesVertically) {
+          // The prior vertical run already overlaps or nearly touches the
+          // node. A side attachment would create a tiny terminal reversal, so
+          // keep the natural vertical approach and remove that artificial bend.
+          const approachFromTop = prev.y > beforePrev.y
+          const attachmentX = prevInsideTargetWidth ? prev.x : targetNode.cx
+          result[last] = {
+            x: attachmentX,
+            y: approachFromTop ? targetNode.cy - targetNode.hh : targetNode.cy + targetNode.hh,
+          }
+          if (prevInsideTargetWidth) {
+            result.splice(last - 1, 1)
+          } else {
+            result[last - 1] = { x: attachmentX, y: beforePrev.y }
+          }
+        } else {
+          // Strictly horizontal — route to center for visual balance
+          const approachFromLeft = curr.x > prev.x
+          const sideX = approachFromLeft
+            ? targetNode.cx - targetNode.hw
+            : targetNode.cx + targetNode.hw
+          result[last] = { x: sideX, y: targetNode.cy }
+          result[last - 1] = { ...prev, y: targetNode.cy }
+        }
       } else if (isStrictlyVertical) {
-        // Strictly vertical — route to center for visual balance
-        const approachFromTop = curr.y > prev.y
-        const sideY = approachFromTop
-          ? targetNode.cy - targetNode.hh
-          : targetNode.cy + targetNode.hh
-        result[last] = { x: targetNode.cx, y: sideY }
-        result[last - 1] = { ...prev, x: targetNode.cx }
+        const beforePrev = result[last - 2]
+        const prevInsideTargetHeight =
+          prev.y >= targetNode.cy - targetNode.hh &&
+          prev.y <= targetNode.cy + targetNode.hh
+        const prevNearTargetHeight =
+          prev.y >= targetNode.cy - targetNode.hh - MIN_TERMINAL_RUN &&
+          prev.y <= targetNode.cy + targetNode.hh + MIN_TERMINAL_RUN
+        const arrivesHorizontally = beforePrev &&
+          Math.abs(beforePrev.y - prev.y) < 1 &&
+          Math.abs(beforePrev.x - prev.x) >= 1
+
+        if (prevNearTargetHeight && arrivesHorizontally) {
+          // Horizontal counterpart of the overlap case above, for LR/RL.
+          const approachFromLeft = prev.x > beforePrev.x
+          const attachmentY = prevInsideTargetHeight ? prev.y : targetNode.cy
+          result[last] = {
+            x: approachFromLeft ? targetNode.cx - targetNode.hw : targetNode.cx + targetNode.hw,
+            y: attachmentY,
+          }
+          if (prevInsideTargetHeight) {
+            result.splice(last - 1, 1)
+          } else {
+            result[last - 1] = { x: beforePrev.x, y: attachmentY }
+          }
+        } else {
+          // Strictly vertical — route to center for visual balance
+          const approachFromTop = curr.y > prev.y
+          const sideY = approachFromTop
+            ? targetNode.cy - targetNode.hh
+            : targetNode.cy + targetNode.hh
+          result[last] = { x: targetNode.cx, y: sideY }
+          result[last - 1] = { ...prev, x: targetNode.cx }
+        }
       } else if (isPrimarilyHorizontal) {
         // Primarily horizontal — use natural Y if within bounds
         const approachFromLeft = curr.x > prev.x
@@ -412,5 +471,5 @@ export function clipEndpointsToNodes(
     }
   }
 
-  return result
+  return removeCollinear(result)
 }

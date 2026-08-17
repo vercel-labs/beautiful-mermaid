@@ -7,6 +7,7 @@
 // ============================================================================
 
 import type { MermaidGraph, MermaidSubgraph } from '../types.ts'
+import { titleCaseEdgeLabel } from '../styles.ts'
 import type {
   AsciiGraph, AsciiNode, AsciiEdge, AsciiSubgraph, AsciiConfig,
 } from './types.ts'
@@ -58,7 +59,7 @@ export function convertToAsciiGraph(parsed: MermaidGraph, config: AsciiConfig): 
     edges.push({
       from,
       to,
-      text: mEdge.label ?? '',
+      text: mEdge.label ? titleCaseEdgeLabel(mEdge.label) : '',
       path: [],
       labelLine: [],
       startDir: { x: 0, y: 0 },

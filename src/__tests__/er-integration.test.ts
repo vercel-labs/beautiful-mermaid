@@ -150,8 +150,8 @@ function extractEntityBoxes(svg: string): Map<string, { x: number; y: number; wi
 /** Extract relationship label positions from SVG: returns Map<label, {x, y}> */
 function extractLabelPositions(svg: string): Map<string, { x: number; y: number }> {
   const labels = new Map<string, { x: number; y: number }>()
-  // Relationship labels use font-size="11" font-weight="400" with dy baseline shift
-  const labelPattern = /<text x="([\d.]+)" y="([\d.]+)"[^>]*text-anchor="middle"[^>]*dy="[^"]*"[^>]*font-size="11"[^>]*font-weight="400"[^>]*>([^<]+)<\/text>/g
+  // Relationship labels use the shared 14px edge-label style.
+  const labelPattern = /<text x="([\d.]+)" y="([\d.]+)"[^>]*text-anchor="middle"[^>]*dy="[^"]*"[^>]*font-size="14"[^>]*font-weight="400"[^>]*>([^<]+)<\/text>/g
   let match
   while ((match = labelPattern.exec(svg)) !== null) {
     labels.set(match[3]!, { x: parseFloat(match[1]!), y: parseFloat(match[2]!) })

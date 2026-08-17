@@ -38,8 +38,8 @@ export type NodeShape =
   | 'trapezoid'      // [/text\]  — wider bottom
   | 'trapezoid-alt'  // [\text/]  — wider top
   // Batch 3 state diagram pseudostates
-  | 'state-start'    // filled circle (start pseudostate)
-  | 'state-end'      // bullseye circle (end pseudostate)
+  | 'state-start'    // invisible initial layout anchor
+  | 'state-end'      // invisible final layout anchor
 
 export interface MermaidEdge {
   source: string

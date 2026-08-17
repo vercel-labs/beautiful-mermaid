@@ -116,37 +116,53 @@ export function computeDelays(
   const sortedRanks = [...rankBuckets.keys()].sort((a, b) => a - b)
 
   // Cascading delay computation: process ranks in order.
-  // Nodes with no incoming edges use rank-based stagger.
-  // Nodes with incoming edges wait for the latest incoming edge to finish.
+  // Forward edges are coordinated by destination so branches from an early
+  // source do not finish and float while waiting for a later source/node.
   for (const rank of sortedRanks) {
     const bucket = rankBuckets.get(rank)!
     for (let i = 0; i < bucket.length; i++) {
       const node = bucket[i]!
-      const incoming = incomingEdges.get(node.id)
+      const incoming = incomingEdges.get(node.id) ?? []
+      const readyIncoming = incoming.filter(edgeIdx => {
+        const source = graph.edges[edgeIdx]!.source
+        return nodes.has(source)
+      })
 
-      if (!incoming || incoming.length === 0) {
-        // Root node: use rank-based stagger
+      if (node.shape === 'state-start') {
+        // The initial pseudostate is invisible. Mark it as already complete so
+        // its labeled ingress edge begins immediately instead of after a blank beat.
+        nodes.set(node.id, -opts.duration)
+      } else if (readyIncoming.length === 0) {
+        // Root or cycle entry: use rank-based stagger. Edges from sources that
+        // appear later are feedback edges and are scheduled after all nodes.
         nodes.set(node.id, rank * opts.stagger + i * withinRankStagger)
       } else {
-        // Start appearing before incoming edge finishes (overlap)
-        // nodeOverlap=0 means wait for edge to finish, 0.5 means start halfway through
+        // Wait until every currently reachable source is visible, then launch
+        // all incoming edges together. The target begins appearing as those
+        // edges approach it, preserving the configured overlap.
         const overlap = opts.duration * opts.nodeOverlap
-        let latestEdgeEnd = 0
-        for (const edgeIdx of incoming) {
-          const edgeDelay = edges.get(edgeIdx) ?? 0
-          latestEdgeEnd = Math.max(latestEdgeEnd, edgeDelay + opts.duration)
+        let latestSourceReady = 0
+        for (const edgeIdx of readyIncoming) {
+          const source = graph.edges[edgeIdx]!.source
+          const sourceDelay = nodes.get(source) ?? 0
+          latestSourceReady = Math.max(latestSourceReady, sourceDelay + opts.duration)
         }
-        nodes.set(node.id, latestEdgeEnd - overlap + i * withinRankStagger)
-      }
 
-      // Now compute outgoing edge delays for this node
-      const nodeDelay = nodes.get(node.id)!
-      for (let ei = 0; ei < graph.edges.length; ei++) {
-        if (graph.edges[ei]!.source === node.id) {
-          edges.set(ei, nodeDelay + opts.duration)
+        const coordinatedEdgeDelay = latestSourceReady + i * withinRankStagger
+        for (const edgeIdx of readyIncoming) {
+          edges.set(edgeIdx, coordinatedEdgeDelay)
         }
+        nodes.set(node.id, coordinatedEdgeDelay + opts.duration - overlap)
       }
     }
+  }
+
+  // Remaining edges point back to an already-visible rank (or laterally to a
+  // node processed earlier). They can animate as soon as their source appears.
+  for (let edgeIdx = 0; edgeIdx < graph.edges.length; edgeIdx++) {
+    if (edges.has(edgeIdx)) continue
+    const sourceDelay = nodes.get(graph.edges[edgeIdx]!.source) ?? 0
+    edges.set(edgeIdx, sourceDelay + opts.duration)
   }
 
   // Group delays: appear when children are mostly visible
