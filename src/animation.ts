@@ -2,13 +2,14 @@
 // Animation system — CSS + SMIL animation for SVG diagrams
 //
 // Timing model:
-//   - `duration`: how long each element animates
+//   - `duration`: base node duration + reference edge duration
+//   - edge duration scales with path distance up to `maxDuration`
 //   - `stagger`: delay between consecutive elements
 //   - `groupDelay`: extra offset for group container reveal
 //
 // Easing model:
-//   - `nodeEasing`: expo-out for elements entering (fast appear, gentle settle)
-//   - `edgeEasing`: ease-in-out for lines drawing (accelerate from source, decelerate into target)
+//   - `nodeEasing`: expo-out for restrained, quick-settling reveals
+//   - `edgeEasing`: organic acceleration/deceleration for traveling lines
 //   - Arrow SMIL keySplines auto-derived from edgeEasing to stay perfectly synced
 //
 // Cascade: source node → edge draws → target node appears
@@ -20,13 +21,14 @@ import type { PositionedGraph, PositionedNode, PositionedGroup, AnimationOptions
 export type ResolvedAnimation = Required<AnimationOptions>
 
 const DEFAULTS: ResolvedAnimation = {
-  duration: 650,
+  duration: 500,
+  maxDuration: 980,
   stagger: 0,
-  groupDelay: 110,
-  nodeOverlap: 0.35,
-  nodeEasing: 'ease',
-  edgeEasing: 'ease-in-out',
-  nodeAnimation: 'fade',
+  groupDelay: 60,
+  nodeOverlap: 0.48,
+  nodeEasing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+  edgeEasing: 'cubic-bezier(0.3, 0, 0.3, 1)',
+  nodeAnimation: 'scale',
   edgeAnimation: 'draw',
   reducedMotion: true,
 }
@@ -37,7 +39,13 @@ export function resolveAnimation(
 ): ResolvedAnimation | null {
   if (!animate) return null
   if (animate === true) return { ...DEFAULTS }
-  return { ...DEFAULTS, ...animate }
+  const resolved = { ...DEFAULTS, ...animate }
+  if (animate.duration != null && animate.maxDuration == null) {
+    resolved.maxDuration = Math.round(
+      animate.duration * (DEFAULTS.maxDuration / DEFAULTS.duration),
+    )
+  }
+  return resolved
 }
 
 // ============================================================================
@@ -78,7 +86,33 @@ export function cssEasingToSmil(easing: string): string {
 export interface ElementDelays {
   nodes: Map<string, number>   // nodeId → delay ms
   edges: Map<number, number>   // edge index → delay ms
+  edgeDurations: Map<number, number> // edge index → distance-scaled duration ms
   groups: Map<string, number>  // groupId → delay ms
+}
+
+const EDGE_REFERENCE_DISTANCE = 160
+const EDGE_MIN_DURATION_RATIO = 0.68
+const SOURCE_EDGE_START_PROGRESS = 0.42
+const FEEDBACK_EDGE_REST = 100
+const INITIAL_HOLD = 120
+
+/** Scale an edge's travel time by geometric distance without letting long
+ * exterior routes make the entire diagram feel sluggish. */
+export function computeEdgeDuration(
+  points: PositionedGraph['edges'][number]['points'],
+  opts: ResolvedAnimation,
+): number {
+  let distance = 0
+  for (let index = 1; index < points.length; index++) {
+    const start = points[index - 1]!
+    const end = points[index]!
+    distance += Math.hypot(end.x - start.x, end.y - start.y)
+  }
+
+  const minimum = opts.duration * EDGE_MIN_DURATION_RATIO
+  const maximum = Math.max(minimum, opts.maxDuration)
+  const scaled = opts.duration * Math.sqrt(Math.max(distance, 24) / EDGE_REFERENCE_DISTANCE)
+  return Math.round(Math.min(maximum, Math.max(minimum, scaled)))
 }
 
 /** Compute animation delay for each element based on the cascade:
@@ -89,7 +123,12 @@ export function computeDelays(
 ): ElementDelays {
   const nodes = new Map<string, number>()
   const edges = new Map<number, number>()
+  const edgeDurations = new Map<number, number>()
   const groups = new Map<string, number>()
+
+  for (let edgeIdx = 0; edgeIdx < graph.edges.length; edgeIdx++) {
+    edgeDurations.set(edgeIdx, computeEdgeDuration(graph.edges[edgeIdx]!.points, opts))
+  }
 
   const withinRankStagger = opts.stagger * 0.5
 
@@ -129,46 +168,77 @@ export function computeDelays(
       })
 
       if (node.shape === 'state-start') {
-        // The initial pseudostate is invisible. Mark it as already complete so
-        // its labeled ingress edge begins immediately instead of after a blank beat.
-        nodes.set(node.id, -opts.duration)
+        // The invisible initial pseudostate creates a short opening breath,
+        // then hands off to the ingress edge without animating itself.
+        nodes.set(
+          node.id,
+          INITIAL_HOLD - opts.duration * SOURCE_EDGE_START_PROGRESS,
+        )
       } else if (readyIncoming.length === 0) {
         // Root or cycle entry: use rank-based stagger. Edges from sources that
         // appear later are feedback edges and are scheduled after all nodes.
         nodes.set(node.id, rank * opts.stagger + i * withinRankStagger)
       } else {
-        // Wait until every currently reachable source is visible, then launch
-        // all incoming edges together. The target begins appearing as those
-        // edges approach it, preserving the configured overlap.
-        const overlap = opts.duration * opts.nodeOverlap
-        let latestSourceReady = 0
+        // Coordinate incoming edges by arrival rather than departure. Routes
+        // with different lengths begin at different times, then land together
+        // so the target receives one clear causal beat.
+        const sourceReady = new Map<number, number>()
+        let coordinatedArrival = 0
         for (const edgeIdx of readyIncoming) {
           const source = graph.edges[edgeIdx]!.source
           const sourceDelay = nodes.get(source) ?? 0
-          latestSourceReady = Math.max(latestSourceReady, sourceDelay + opts.duration)
+          // Let motion carry through the graph before the source node has fully
+          // settled. The first ingress edge still starts at t=0.
+          const readyAt = Math.max(
+            0,
+            sourceDelay + opts.duration * SOURCE_EDGE_START_PROGRESS,
+          )
+          sourceReady.set(edgeIdx, readyAt)
+          coordinatedArrival = Math.max(
+            coordinatedArrival,
+            readyAt + (edgeDurations.get(edgeIdx) ?? opts.duration),
+          )
         }
 
-        const coordinatedEdgeDelay = latestSourceReady + i * withinRankStagger
+        coordinatedArrival += i * withinRankStagger
+        let latestEdgeStart = 0
         for (const edgeIdx of readyIncoming) {
-          edges.set(edgeIdx, coordinatedEdgeDelay)
+          const edgeDuration = edgeDurations.get(edgeIdx) ?? opts.duration
+          const edgeDelay = Math.max(
+            sourceReady.get(edgeIdx) ?? 0,
+            coordinatedArrival - edgeDuration,
+          )
+          edges.set(edgeIdx, edgeDelay)
+          latestEdgeStart = Math.max(latestEdgeStart, edgeDelay)
         }
-        nodes.set(node.id, coordinatedEdgeDelay + opts.duration - overlap)
+
+        // `nodeOverlap` is based on node time, not edge percentage, keeping
+        // the arrival beat perceptually consistent across short and long edges.
+        const arrivalLead = opts.duration * opts.nodeOverlap
+        nodes.set(
+          node.id,
+          Math.max(latestEdgeStart, coordinatedArrival - arrivalLead),
+        )
       }
     }
   }
 
   // Remaining edges point back to an already-visible rank (or laterally to a
-  // node processed earlier). They can animate as soon as their source appears.
+  // node processed earlier). A short rest beat separates these return paths
+  // from the forward narrative and keeps crossing motion legible.
   for (let edgeIdx = 0; edgeIdx < graph.edges.length; edgeIdx++) {
     if (edges.has(edgeIdx)) continue
     const sourceDelay = nodes.get(graph.edges[edgeIdx]!.source) ?? 0
-    edges.set(edgeIdx, sourceDelay + opts.duration)
+    edges.set(
+      edgeIdx,
+      Math.max(0, sourceDelay + opts.duration + FEEDBACK_EDGE_REST),
+    )
   }
 
   // Group delays: appear when children are mostly visible
   collectGroupDelays(graph.groups, graph.nodes, opts, nodes, groups)
 
-  return { nodes, edges, groups }
+  return { nodes, edges, edgeDurations, groups }
 }
 
 /** When group container appears relative to last child (0 = start, 1 = fully done) */
@@ -209,32 +279,51 @@ export function buildAnimationCSS(opts: ResolvedAnimation): string {
     : opts.nodeAnimation === 'scale'
       ? 'a-scale'
       : 'a-fade'
+  const nodeRule = opts.nodeAnimation === 'none'
+    ? '.an { opacity: 1; }'
+    : `.an { opacity: 0; animation: ${nodeKeyframe} ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; transform-box: fill-box; transform-origin: center; }`
 
   return `
   /* Animation keyframes */
   @keyframes a-fade { from { opacity: 0 } to { opacity: 1 } }
-  @keyframes a-fade-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
-  @keyframes a-scale { from { opacity: 0; transform: scale(0.85) } to { opacity: 1; transform: scale(1) } }
-  @keyframes a-draw { from { stroke-dashoffset: 1; opacity: 1 } to { stroke-dashoffset: 0; opacity: 1 } }
+  @keyframes a-label-in {
+    0% { opacity: 0 }
+    60% { opacity: 0.7 }
+    100% { opacity: 1 }
+  }
+  @keyframes a-fade-up { from { opacity: 0; transform: translateY(3px) } to { opacity: 1; transform: translateY(0) } }
+  @keyframes a-scale {
+    0% { opacity: 0; transform: scale(0.975); filter: blur(0.6px) }
+    55% { opacity: 1; filter: blur(0.12px) }
+    100% { opacity: 1; transform: scale(1); filter: blur(0) }
+  }
 
   /* Animated nodes — expo-out: fast appear, gentle settle */
-  .an { opacity: 0; animation: ${nodeKeyframe} ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; transform-box: fill-box; transform-origin: center; }
+  ${nodeRule}
 
   /* Animated groups — same easing as nodes */
   .ag { opacity: 0; animation: a-fade ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; }
 
-  /* Animated edges — hidden during delay via opacity:0, revealed when animation starts */
-  .ae { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: a-draw ${opts.duration}ms ${opts.edgeEasing} var(--d) forwards; }
+  /* Fade-only edges (including dotted lines) use the same restrained cadence. */
+  .aeg-fade { opacity: 0; animation: a-fade var(--ed) ${opts.nodeEasing} var(--d) forwards; }
 
-  /* Animated edge labels — fade with node easing */
-  .ael { opacity: 0; animation: a-fade ${opts.duration}ms ${opts.nodeEasing} var(--d) forwards; }
+  /* A soft underlay exists only during travel; the resting diagram stays crisp. */
+  .aet { filter: blur(0.7px); }
+  .aef { filter: blur(1.1px); }
 
-  /* Arrow hidden until animateMotion begins */
+  /* Labels arrive after the moving edge has established direction. */
+  .ael { opacity: 0; animation: a-label-in var(--ad, 320ms) linear var(--d) forwards; }
+
+  /* Traveling arrowheads are driven by the same SMIL spline as the edge. */
   .aa { opacity: 0; }
-  .aa.aa-active { opacity: 1; }
 ${opts.reducedMotion ? `
   /* Accessibility: disable animations for users who prefer reduced motion */
   @media (prefers-reduced-motion: reduce) {
-    .an, .ag, .ae, .ael, .aa { animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; }
+    .an, .ag, .aeg-fade, .ael { animation: none !important; opacity: 1 !important; }
+    .ae { opacity: 1 !important; stroke-dashoffset: 0 !important; }
+    .aet, .aef { display: none !important; }
+    .ae.ae-end { marker-end: url(#arrowhead) !important; }
+    .ae.ae-start { marker-start: url(#arrowhead-start) !important; }
+    .aa { opacity: 0 !important; }
   }` : ''}`
 }

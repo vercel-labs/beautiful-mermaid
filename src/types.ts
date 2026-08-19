@@ -211,19 +211,21 @@ export interface RenderOptions {
 // ============================================================================
 
 export interface AnimationOptions {
-  /** Duration of each element's animation in ms. Default: 600 */
+  /** Base node duration and reference edge duration in ms. Default: 500 */
   duration?: number
-  /** Delay between consecutive elements in ms. Within-rank stagger is derived as stagger * 0.5. Default: 80 */
+  /** Maximum duration for distance-scaled edge motion in ms. Default: 980 */
+  maxDuration?: number
+  /** Delay between consecutive elements in ms. Within-rank stagger is derived as stagger * 0.5. Default: 0 */
   stagger?: number
-  /** Extra offset for when group container appears in ms. Default: -60 */
+  /** Extra offset for when group container appears in ms. Default: 60 */
   groupDelay?: number
-  /** How early a node starts appearing before its incoming edge finishes, as a fraction of duration (0 = wait for edge, 0.5 = start halfway through edge, 1 = start with edge). Default: 0.3 */
+  /** How early a node starts appearing before incoming edges arrive, as a fraction of node duration (0 = at arrival, 0.5 = half a node duration early). Default: 0.48 */
   nodeOverlap?: number
   /** Easing for node/group enter animations. Default: 'cubic-bezier(0.16, 1, 0.3, 1)' (expo-out — fast appear, gentle settle) */
   nodeEasing?: string
-  /** Easing for edge draw-in + arrow travel. Must be a cubic-bezier for arrow sync. Default: 'cubic-bezier(0.65, 0, 0.35, 1)' (smooth flow) */
+  /** Easing for edge draw-in + arrow travel. Must be a cubic-bezier for arrow sync. Default: 'cubic-bezier(0.3, 0, 0.3, 1)' */
   edgeEasing?: string
-  /** Node entrance animation. Default: 'fade' */
+  /** Node entrance animation. Default: 'scale' */
   nodeAnimation?: 'fade' | 'fade-up' | 'scale' | 'none'
   /** Edge entrance animation. Default: 'draw' */
   edgeAnimation?: 'draw' | 'fade' | 'none'

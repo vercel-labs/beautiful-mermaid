@@ -58,10 +58,8 @@ export function renderSvg(
     parts.push('</style>')
   }
   parts.push('<defs>')
-  // Only include marker defs when not animated (animated uses animateMotion instead)
-  if (!anim) {
-    parts.push(arrowMarkerDefs())
-  }
+  // Static markers are also used by the reduced-motion animated fallback.
+  parts.push(arrowMarkerDefs())
   // Diagonal hatching pattern for subgraph backgrounds
   parts.push(
     `  <pattern id="diag-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
@@ -87,10 +85,11 @@ export function renderSvg(
   for (let i = 0; i < renderedEdges.length; i++) {
     const edge = renderedEdges[i]!
     const delay = delays?.edges.get(i)
+    const edgeDuration = delays?.edgeDurations.get(i) ?? anim?.duration ?? 0
     if (anim && delay != null && anim.edgeAnimation === 'draw') {
-      parts.push(renderAnimatedEdge(edge, i, lineWidth, edgeBendRadius, delay, anim, sharedJunctions))
+      parts.push(renderAnimatedEdge(edge, i, lineWidth, edgeBendRadius, delay, edgeDuration, anim, sharedJunctions))
     } else if (anim && delay != null && anim.edgeAnimation === 'fade') {
-      parts.push(`<g class="an" style="--d:${delay}ms">`)
+      parts.push(`<g class="aeg aeg-fade" style="--d:${delay}ms;--ed:${edgeDuration}ms">`)
       parts.push(renderEdge(edge, lineWidth, edgeBendRadius, sharedJunctions))
       parts.push('</g>')
     } else {
@@ -116,7 +115,10 @@ export function renderSvg(
     if (edge.label) {
       const delay = delays?.edges.get(i)
       if (anim && delay != null) {
-        parts.push(`<g class="ael" style="--d:${delay}ms">`)
+        const edgeDuration = delays?.edgeDurations.get(i) ?? anim.duration
+        const labelDelay = delay + edgeDuration * 0.65
+        const labelDuration = Math.min(360, Math.max(300, edgeDuration * 0.5))
+        parts.push(`<g class="ael" style="--d:${labelDelay}ms;--ad:${labelDuration}ms">`)
         parts.push(renderEdgeLabel(edge, font, edgeFontSize))
         parts.push('</g>')
       } else {
@@ -157,6 +159,7 @@ function renderAnimatedEdge(
   lineWidth: number,
   bendRadius: number,
   delay: number,
+  duration: number,
   anim: ResolvedAnimation,
   sharedJunctions: Set<string>,
 ): string {
@@ -166,7 +169,7 @@ function renderAnimatedEdge(
   // Dotted edges can't use stroke-dashoffset draw animation (conflicts with dasharray)
   // Fall back to fade animation for dotted edges
   if (edge.style === 'dotted') {
-    return `<g class="an" style="--d:${delay}ms">${renderEdge(edge, lineWidth, bendRadius, sharedJunctions)}</g>`
+    return `<g class="aeg aeg-fade" style="--d:${delay}ms;--ed:${duration}ms">${renderEdge(edge, lineWidth, bendRadius, sharedJunctions)}</g>`
   }
 
   const pts = edge.points.map(p => ({ ...p }))
@@ -197,19 +200,54 @@ function renderAnimatedEdge(
 
   // SMIL timing — shared by edge line + arrowhead so they use the same animation engine
   const smilSplines = cssEasingToSmil(anim.edgeEasing)
-  const durS = (anim.duration / 1000).toFixed(3)
+  const entranceSplines = cssEasingToSmil(anim.nodeEasing)
+  const durS = (duration / 1000).toFixed(3)
   const beginS = (delay / 1000).toFixed(3)
+  const settleS = (Math.min(140, duration * 0.42) / 1000).toFixed(3)
+
+  parts.push(`<g class="aeg" style="--d:${delay}ms;--ed:${duration}ms">`)
+
+  // The blurred underlay gives the moving stroke a small amount of energy,
+  // then disappears completely so the resting diagram stays sharp.
+  parts.push(
+    `<path class="aet" d="${pathD}" pathLength="1" fill="none" ` +
+    `stroke="var(--_line)" stroke-width="${strokeWidth + 1.5}" stroke-linecap="round" ` +
+    `stroke-dasharray="1" stroke-dashoffset="1" opacity="0">` +
+    `\n  <animate attributeName="stroke-dashoffset" from="1" to="0" ` +
+    `dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
+    `calcMode="spline" keyTimes="0;1" keySplines="${smilSplines}" />` +
+    `\n  <animate attributeName="opacity" values="0;0.14;0" ` +
+    `keyTimes="0;0.4;1" dur="${durS}s" begin="${beginS}s" fill="freeze" />` +
+    `\n</path>`
+  )
 
   // Edge line with SMIL draw-in animation (not CSS — SMIL stays synced with arrowhead)
   parts.push(
-    `<path id="${pathId}" d="${pathD}" pathLength="1" ` +
+    `<path id="${pathId}" class="ae${edge.hasArrowEnd ? ' ae-end' : ''}${edge.hasArrowStart ? ' ae-start' : ''}" d="${pathD}" pathLength="1" ` +
     `fill="none" stroke="var(--_line)" stroke-width="${strokeWidth}" ` +
     `stroke-dasharray="1" stroke-dashoffset="1" opacity="0">` +
     `\n  <animate attributeName="stroke-dashoffset" from="1" to="0" ` +
     `dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
     `calcMode="spline" keyTimes="0;1" keySplines="${smilSplines}" />` +
-    `\n  <set attributeName="opacity" to="1" begin="${beginS}s" fill="freeze" />` +
+    `\n  <animate attributeName="opacity" from="0.35" to="1" ` +
+    `dur="${settleS}s" begin="${beginS}s" fill="freeze" ` +
+    `calcMode="spline" keyTimes="0;1" keySplines="${entranceSplines}" />` +
     `\n</path>`
+  )
+
+  // A small monochrome focus bloom travels beneath the arrowhead. It creates
+  // a cinematic focal point without leaving glow in the resting diagram.
+  parts.push(
+    `<circle class="aef" r="${Math.max(1.5, strokeWidth * 1.25)}" ` +
+    `fill="var(--_line)" opacity="0">` +
+    `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
+    `rotate="auto" keyPoints="0;1" keyTimes="0;1" ` +
+    `calcMode="spline" keySplines="${smilSplines}">` +
+    `\n    <mpath href="#${pathId}" />` +
+    `\n  </animateMotion>` +
+    `\n  <animate attributeName="opacity" values="0;0.18;0.12;0" ` +
+    `keyTimes="0;0.16;0.72;1" dur="${durS}s" begin="${beginS}s" fill="freeze" />` +
+    `\n</circle>`
   )
 
   // Animated arrowhead (travels along path via SMIL animateMotion)
@@ -217,13 +255,15 @@ function renderAnimatedEdge(
     const w = ARROW_HEAD.width
     const hh = ARROW_HEAD.height / 2
     parts.push(
-      `<polygon points="0 ${-hh}, ${w} 0, 0 ${hh}" fill="var(--_arrow)" opacity="0">` +
+      `<polygon class="aa" points="0 ${-hh}, ${w} 0, 0 ${hh}" fill="var(--_arrow)" opacity="0">` +
       `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
       `rotate="auto" keyPoints="0;1" keyTimes="0;1" ` +
       `calcMode="spline" keySplines="${smilSplines}">` +
       `\n    <mpath href="#${pathId}" />` +
       `\n  </animateMotion>` +
-      `\n  <set attributeName="opacity" to="1" begin="${beginS}s" fill="freeze" />` +
+      `\n  <animate attributeName="opacity" from="0" to="1" ` +
+      `dur="${settleS}s" begin="${beginS}s" fill="freeze" ` +
+      `calcMode="spline" keyTimes="0;1" keySplines="${entranceSplines}" />` +
       `\n</polygon>`
     )
   }
@@ -233,17 +273,20 @@ function renderAnimatedEdge(
     const w = ARROW_HEAD.width
     const hh = ARROW_HEAD.height / 2
     parts.push(
-      `<polygon points="${w} ${-hh}, 0 0, ${w} ${hh}" fill="var(--_arrow)" opacity="0">` +
+      `<polygon class="aa" points="${w} ${-hh}, 0 0, ${w} ${hh}" fill="var(--_arrow)" opacity="0">` +
       `\n  <animateMotion dur="${durS}s" begin="${beginS}s" fill="freeze" ` +
       `rotate="auto" keyPoints="1;0" keyTimes="0;1" ` +
       `calcMode="spline" keySplines="${smilSplines}">` +
       `\n    <mpath href="#${pathId}" />` +
       `\n  </animateMotion>` +
-      `\n  <set attributeName="opacity" to="1" begin="${beginS}s" fill="freeze" />` +
+      `\n  <animate attributeName="opacity" from="0" to="1" ` +
+      `dur="${settleS}s" begin="${beginS}s" fill="freeze" ` +
+      `calcMode="spline" keyTimes="0;1" keySplines="${entranceSplines}" />` +
       `\n</polygon>`
     )
   }
 
+  parts.push('</g>')
   return parts.join('\n')
 }
 

@@ -61,9 +61,10 @@ const svg = await renderMermaid(diagram, {
 // Or customize:
 const svg = await renderMermaid(diagram, {
   animate: {
-    duration: 650,
+    duration: 500,
+    maxDuration: 980,
     stagger: 0,
-    nodeOverlap: 0.35,
+    nodeOverlap: 0.48,
     nodeAnimation: "fade-up",
   },
 });
@@ -152,26 +153,28 @@ Pass `animate: true` for rank-by-rank animation with sane defaults, or customize
 
 ### How It Works
 
-- **Nodes** fade in rank-by-rank (top → bottom)
-- **Edges** draw in via `stroke-dashoffset` with `pathLength="1"`
+- **Nodes** settle into place rank-by-rank with a restrained 2% scale entrance
+- **Edges** draw in via `stroke-dashoffset` with `pathLength="1"`, with duration scaled to path distance
 - **Arrow tips** travel along the path via SMIL `<animateMotion>`, synced with edge easing
+- **Edge focus** pairs a temporary soft underlay with a small traveling monochrome bloom, then resolves completely crisp
 - **Subgroups** fade in after their contents are mostly visible
 - **Cascade**: source node → edge draws → target node appears (with configurable overlap)
 
-All CSS-based (works in standalone SVG files, no JS runtime needed). SMIL used only for arrow travel.
+CSS and SMIL both run inside the standalone SVG, with no JS runtime needed. SMIL keeps edge drawing and arrow travel synchronized.
 
 ### AnimationOptions
 
 ```typescript
 interface AnimationOptions {
-  duration?: number; // Each element's animation duration (ms). Default: 650
+  duration?: number; // Node duration + reference edge duration (ms). Default: 500
+  maxDuration?: number; // Maximum distance-scaled edge duration. Default: 980
   stagger?: number; // Delay between consecutive elements (ms). Default: 0
-  nodeOverlap?: number; // How early node appears before incoming edge finishes
-  // (0 = wait, 0.5 = halfway, 1 = with edge). Default: 0.35
-  groupDelay?: number; // Extra offset for group container (ms). Default: 110
-  nodeEasing?: string; // CSS easing for nodes/groups. Default: 'ease'
-  edgeEasing?: string; // CSS easing for edge draw-in + arrow travel. Default: 'ease-in-out'
-  nodeAnimation?: string; // 'fade' | 'fade-up' | 'scale' | 'none'. Default: 'fade'
+  nodeOverlap?: number; // How early node appears before incoming edges arrive
+  // As a fraction of node duration. Default: 0.48
+  groupDelay?: number; // Extra offset for group container (ms). Default: 60
+  nodeEasing?: string; // Default: cubic-bezier(0.16, 1, 0.3, 1)
+  edgeEasing?: string; // Default: cubic-bezier(0.3, 0, 0.3, 1)
+  nodeAnimation?: string; // 'fade' | 'fade-up' | 'scale' | 'none'. Default: 'scale'
   edgeAnimation?: string; // 'draw' | 'fade' | 'none'. Default: 'draw'
   reducedMotion?: boolean; // Respect prefers-reduced-motion. Default: true
 }
@@ -182,9 +185,9 @@ interface AnimationOptions {
 | Element      | Easing                         | Rationale                                                          |
 | ------------ | ------------------------------ | ------------------------------------------------------------------ |
 | Nodes/groups | `nodeEasing`                   | Elements "appear" — deceleration curve                             |
-| Edge lines   | `edgeEasing`                   | Lines "flow" — acceleration/deceleration                           |
+| Edge lines   | `edgeEasing`                   | Distance-aware flow with organic acceleration/deceleration          |
 | Arrow tips   | auto-derived from `edgeEasing` | SMIL `keySplines` converted from CSS cubic-bezier, guaranteed sync |
-| Edge labels  | `nodeEasing`                   | Labels are content, not motion                                     |
+| Edge labels  | dedicated linear opacity curve | Gentle 300–360 ms fade after direction is established              |
 
 ### Accessibility
 
